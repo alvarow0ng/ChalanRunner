@@ -1,0 +1,3112 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Obrero a la Fuga - 3D Runner</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Fredoka:wght@500;700;800&display=swap" rel="stylesheet">
+    <style>
+        * {
+            user-select: none;
+            -webkit-user-select: none;
+            -webkit-touch-callout: none;
+            box-sizing: border-box;
+        }
+        html, body {
+            margin: 0;
+            padding: 0;
+            width: 100%;
+            height: 100%;
+            overflow: hidden;
+            background-color: #38bdf8;
+            font-family: 'Fredoka', sans-serif;
+            touch-action: none;
+        }
+        #game-canvas {
+            display: block;
+            width: 100%;
+            height: 100%;
+        }
+        /* Estilo arcade de botones y textos */
+        .arcade-text {
+            text-shadow: 0 3px 0 rgba(0, 0, 0, 0.45);
+        }
+        .arcade-card {
+            background: rgba(15, 23, 42, 0.88);
+            backdrop-filter: blur(8px);
+            border: 3px solid #f59e0b;
+            box-shadow: 0 12px 30px rgba(0,0,0,0.6);
+        }
+        .btn-play {
+            background: linear-gradient(180deg, #fbbf24 0%, #d97706 100%);
+            border-bottom: 5px solid #92400e;
+            transition: transform 0.1s, border-bottom-width 0.1s;
+        }
+        .btn-play:active {
+            transform: translateY(3px);
+            border-bottom-width: 2px;
+        }
+        @keyframes sirenPulse {
+            0%, 100% { box-shadow: inset 0 0 40px rgba(239, 68, 68, 0.7); border-color: #ef4444; }
+            50% { box-shadow: inset 0 0 40px rgba(59, 130, 246, 0.7); border-color: #3b82f6; }
+        }
+        .siren-overlay {
+            animation: sirenPulse 0.45s infinite;
+            pointer-events: none;
+        }
+        @keyframes rainbowBg {
+            0% { background-position: 0% 50%; }
+            50% { background-position: 100% 50%; }
+            100% { background-position: 0% 50%; }
+        }
+        .rainbow-badge {
+            background: linear-gradient(270deg, #ef4444, #f59e0b, #10b981, #3b82f6, #8b5cf6);
+            background-size: 300% 300%;
+            animation: rainbowBg 3s ease infinite;
+        }
+    </style>
+</head>
+<body class="relative w-full h-full">
+
+    <!-- Canvas 3D -->
+    <canvas id="game-canvas"></canvas>
+
+    <!-- Efecto de borde de sirena cuando el policía está cerca -->
+    <div id="siren-border" class="hidden fixed inset-0 border-8 z-10 siren-overlay"></div>
+
+    <!-- Notificación flotante central (Tropiezos, Potenciadores, Escudo Roto) -->
+    <div id="floating-toast" class="hidden fixed top-1/4 left-1/2 -translate-x-1/2 z-20 pointer-events-none text-center transition-all duration-300">
+        <div id="toast-box" class="px-5 py-2 rounded-2xl font-extrabold text-xl md:text-2xl text-white arcade-text shadow-xl border-2 border-white/40">
+            ¡POTENCIADOR!
+        </div>
+    </div>
+
+    <!-- HUD Superior -->
+    <div id="hud" class="hidden fixed top-0 left-0 right-0 p-3 md:p-5 z-20 flex flex-col gap-2 pointer-events-none max-w-2xl mx-auto">
+        <div class="flex items-center justify-between gap-2">
+            <!-- Distancia y Récord -->
+            <div class="flex items-center gap-2 bg-slate-900/80 border-2 border-slate-700 px-3.5 py-1.5 rounded-2xl shadow-lg">
+                <span class="text-orange-400 text-lg">🚧</span>
+                <div>
+                    <div class="text-[10px] text-slate-400 uppercase leading-none font-bold">Distancia</div>
+                    <div class="text-white font-extrabold text-lg md:text-xl leading-tight"><span id="hud-score">0</span> m</div>
+                </div>
+            </div>
+
+            <!-- Monedas Amarillas -->
+            <div class="flex items-center gap-2 bg-slate-900/80 border-2 border-yellow-500/60 px-3.5 py-1.5 rounded-2xl shadow-lg">
+                <span class="inline-block w-5 h-5 rounded-full bg-yellow-400 border-2 border-yellow-200 shadow-inner flex items-center justify-center text-xs font-black text-yellow-900">$</span>
+                <div>
+                    <div class="text-[10px] text-yellow-300/80 uppercase leading-none font-bold">Monedas</div>
+                    <div id="hud-coins" class="text-yellow-400 font-extrabold text-lg md:text-xl leading-tight">0</div>
+                </div>
+            </div>
+
+            <!-- Botón de Sonido y Controles Táctiles Rápidos -->
+            <div class="flex items-center gap-2 pointer-events-auto">
+                <div id="hud-time-badge" class="bg-sky-900/90 border border-sky-400/60 text-sky-200 px-2.5 h-11 rounded-2xl font-extrabold text-xs flex items-center gap-1 shadow-lg">
+                    <span id="hud-time-icon">☀️</span><span id="hud-time-text" class="hidden sm:inline">DÍA</span>
+                </div>
+                <button id="btn-hardhat" class="hidden bg-amber-500/90 hover:bg-amber-400 active:scale-95 border-2 border-yellow-200 text-slate-950 px-3 h-11 rounded-2xl font-black text-xs flex items-center gap-1 shadow-lg transition animate-bounce">
+                    <span>⛑️</span><span>CASCO LISTO (2x Tap)</span>
+                </button>
+                <button id="btn-mute" class="bg-slate-900/85 hover:bg-slate-800 active:scale-95 border-2 border-slate-600 text-white w-11 h-11 rounded-2xl flex items-center justify-center shadow-lg transition">
+                    <span id="mute-icon" class="text-xl">🔊</span>
+                </button>
+            </div>
+        </div>
+
+        <!-- Barra de Letras O-B-R-A, Fichas de Engranaje, Multiplicador y Misión Activa -->
+        <div class="flex flex-wrap items-center justify-between gap-2 bg-slate-900/85 border border-slate-700 px-3 py-1.5 rounded-2xl shadow-md">
+            <!-- Palabra coleccionable O-B-R-A -->
+            <div class="flex items-center gap-1">
+                <span class="text-[10px] text-slate-400 font-bold uppercase mr-1">Palabra:</span>
+                <span id="letter-O" class="w-5 h-5 rounded bg-slate-800 border border-slate-600 text-slate-500 font-black text-xs flex items-center justify-center">O</span>
+                <span id="letter-B" class="w-5 h-5 rounded bg-slate-800 border border-slate-600 text-slate-500 font-black text-xs flex items-center justify-center">B</span>
+                <span id="letter-R" class="w-5 h-5 rounded bg-slate-800 border border-slate-600 text-slate-500 font-black text-xs flex items-center justify-center">R</span>
+                <span id="letter-A" class="w-5 h-5 rounded bg-slate-800 border border-slate-600 text-slate-500 font-black text-xs flex items-center justify-center">A</span>
+            </div>
+
+            <!-- Fichas para la Tragamonedas y Rango Multiplicador -->
+            <div class="flex items-center gap-3 text-xs font-extrabold">
+                <div class="flex items-center gap-1 text-cyan-300" title="Fichas para el Tragamonedas al perder">
+                    <span>⚙️</span><span id="hud-tokens">0</span>
+                </div>
+                <div class="bg-amber-500/20 border border-amber-400 text-amber-300 px-2 py-0.5 rounded-lg text-[11px]">
+                    RANGO <span id="hud-multiplier">x1</span>
+                </div>
+            </div>
+
+            <!-- Misión Activa en tiempo real -->
+            <div class="w-full md:w-auto flex items-center justify-between md:justify-end gap-2 text-[11px] text-slate-200 border-t md:border-t-0 border-slate-800 pt-1 md:pt-0">
+                <span class="text-emerald-400 font-bold">🎯 <span id="hud-mission-text">Salta 2 géiseres</span></span>
+                <span id="hud-mission-prog" class="bg-slate-800 px-2 py-0.5 rounded text-amber-300 font-black">0/2</span>
+            </div>
+        </div>
+
+        <!-- Barra de estado del Policía, Cemento y Combos -->
+        <div class="flex items-center justify-between gap-2">
+            <div id="police-warning" class="hidden flex-1 items-center justify-center gap-2 bg-red-950/90 border-2 border-red-500 px-3 py-1 rounded-xl text-xs md:text-sm font-bold text-red-200 shadow-md animate-pulse">
+                <span>🚨 ¡EL POLICÍA ESTÁ MUY CERCA! NO TROPIECES 🚨</span>
+            </div>
+            <div id="cement-warning" class="hidden bg-stone-700/95 border-2 border-stone-400 px-3 py-1 rounded-xl text-xs font-black text-stone-100 shadow-lg">
+                🪨 BOTAS CON CEMENTO (SALTO BAJO)
+            </div>
+            <div id="near-miss-badge" class="hidden bg-emerald-600/95 border-2 border-emerald-300 px-3 py-1 rounded-xl text-xs font-black text-white shadow-lg">
+                ⚡ ESQUIVE AL LÍMITE x<span id="near-miss-count">1</span> (+15$)
+            </div>
+        </div>
+
+        <!-- Barra de Potenciador Activo (12s + Escudo) -->
+        <div id="powerup-hud" class="hidden bg-slate-900/90 border-2 border-amber-400 rounded-2xl p-2.5 shadow-xl">
+            <div class="flex items-center justify-between text-xs md:text-sm font-extrabold mb-1">
+                <div class="flex items-center gap-1.5 text-amber-300">
+                    <span id="powerup-icon">🛠️</span>
+                    <span id="powerup-name">MARTILLO NEUMÁTICO</span>
+                </div>
+                <div class="flex items-center gap-2">
+                    <span class="bg-cyan-500/30 border border-cyan-400 text-cyan-200 px-2 py-0.5 rounded-full text-[10px] tracking-wide">🛡️ ESCUDO 1 GOLPE</span>
+                    <span id="powerup-timer-text" class="text-white">12.0s</span>
+                </div>
+            </div>
+            <div class="w-full h-2.5 bg-slate-800 rounded-full overflow-hidden border border-slate-700">
+                <div id="powerup-bar" class="h-full rainbow-badge transition-all duration-75" style="width: 100%"></div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Controles en pantalla opcionales para facilitar prueba en PC/Móvil -->
+    <div id="touch-hint" class="hidden fixed bottom-3 left-1/2 -translate-x-1/2 z-20 pointer-events-none text-center">
+        <div class="bg-slate-900/65 text-slate-200 text-xs px-3 py-1 rounded-full border border-slate-700/80">
+            📱 Desliza (⬆️ Saltar | ⬇️ Rodar | ⬅️➡️ Carril) o usa Flechas/WASD
+        </div>
+    </div>
+
+    <!-- Pantalla de Inicio -->
+    <div id="start-screen" class="fixed inset-0 z-30 flex items-center justify-center p-4 bg-slate-950/70 backdrop-blur-sm">
+        <div class="arcade-card w-full max-w-md rounded-3xl p-5 md:p-6 text-white flex flex-col gap-4 max-h-[92vh] overflow-y-auto">
+            <div class="text-center">
+                <div class="inline-block bg-amber-500 text-slate-950 font-black text-xs px-3 py-1 rounded-full uppercase tracking-wider mb-1">
+                    Subway Construction × Jetpack Joyride
+                </div>
+                <h1 class="text-3xl md:text-4xl font-extrabold text-amber-400 arcade-text tracking-tight">
+                    👷‍♂️ OBRERO A LA FUGA
+                </h1>
+                <p class="text-xs md:text-sm text-slate-300 mt-1">
+                    ¡Escapa del policía en plena avenida en obras, sube por las rampas a los camiones y abre las cajas misteriosas <span class="text-amber-300 font-bold">[?]</span>!
+                </p>
+            </div>
+
+            <!-- Guía de Peligros y Mecánicas -->
+            <div class="bg-slate-900/90 rounded-2xl p-3 border border-slate-700/80 text-xs space-y-2">
+                <div class="font-bold text-amber-400 uppercase tracking-wider text-[11px]">🚧 Peligros de la Calle:</div>
+                <div class="grid grid-cols-2 gap-2 text-slate-200">
+                    <div class="flex items-start gap-1.5">
+                        <span class="text-base">🕳️</span>
+                        <span><b>Baches:</b> Sáltalos. Si los pisas, tropiezas y el policía se acerca.</span>
+                    </div>
+                    <div class="flex items-start gap-1.5">
+                        <span class="text-base">🚚</span>
+                        <span><b>Tráfico y Claxon:</b> Algunos vehículos vienen de frente con luces y claxon.</span>
+                    </div>
+                    <div class="flex items-start gap-1.5">
+                        <span class="text-base">📐</span>
+                        <span><b>Rampas:</b> Sube al techo de camiones y autobuses estacionados.</span>
+                    </div>
+                    <div class="flex items-start gap-1.5">
+                        <span class="text-base">🚧</span>
+                        <span><b>Barreras y Cemento:</b> Rueda con voltereta bajo vallas y salta el cemento fresco.</span>
+                    </div>
+                    <div class="flex items-start gap-1.5">
+                        <span class="text-base">🚽</span>
+                        <span><b>Baños Portátiles:</b> ¡Salta encima de ellos o destrúyelos para ganar <b>+15 Monedas</b>!</span>
+                    </div>
+                    <div class="flex items-start gap-1.5">
+                        <span class="text-base">⛲</span>
+                        <span><b>Géiser y Vigas Aéreas:</b> Salta sobre alcantarillas con chorro para volar alto; esquiva las vigas colgantes.</span>
+                    </div>
+                    <div class="flex items-start gap-1.5">
+                        <span class="text-base">🎰</span>
+                        <span><b>Letras O-B-R-A y Fichas ⚙️:</b> Junta O-B-R-A por +100$ y usa fichas ⚙️ en la Tragamonedas al caer.</span>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Guía de Potenciadores Cajas [?] -->
+            <div class="bg-slate-900/90 rounded-2xl p-3 border border-slate-700/80 text-xs space-y-1.5">
+                <div class="flex items-center justify-between">
+                    <span class="font-bold text-cyan-300 uppercase tracking-wider text-[11px]">🎁 Cajas Multicolor [?] (12s + Escudo):</span>
+                </div>
+                <div class="grid grid-cols-2 gap-1.5 text-[11px] text-slate-300">
+                    <div class="bg-slate-800/80 p-1.5 rounded-xl border border-slate-700">
+                        <b class="text-amber-300">🔨 Martillo Saltarín:</b> Súper saltos automáticos sobre carros.
+                    </div>
+                    <div class="bg-slate-800/80 p-1.5 rounded-xl border border-slate-700">
+                        <b class="text-amber-300">🚜 Mini-Excavadora:</b> Destruye carros, barreras y baches.
+                    </div>
+                    <div class="bg-slate-800/80 p-1.5 rounded-xl border border-slate-700">
+                        <b class="text-amber-300">🚀 Jetpack Soldador:</b> Vuela sobre el tráfico con monedas aéreas.
+                    </div>
+                    <div class="bg-slate-800/80 p-1.5 rounded-xl border border-slate-700">
+                        <b class="text-amber-300">🧲 Mecha Magnético:</b> Atrae todas las monedas y rompe vallas.
+                    </div>
+                </div>
+            </div>
+
+            <!-- Barra de Banco del Sindicato y Acceso a la Tienda -->
+            <div class="flex items-center justify-between bg-slate-900/95 border-2 border-yellow-500/70 rounded-2xl px-4 py-2.5 shadow-lg">
+                <div class="flex items-center gap-2">
+                    <span class="w-7 h-7 rounded-full bg-yellow-400 border-2 border-yellow-200 flex items-center justify-center text-slate-950 font-black text-sm">$</span>
+                    <div>
+                        <div class="text-[10px] text-yellow-300/80 uppercase font-bold leading-none">Ahorro del Sindicato</div>
+                        <div class="text-lg font-extrabold text-yellow-400 leading-tight"><span id="menu-bank-coins">0</span> $</div>
+                    </div>
+                </div>
+                <button id="btn-open-shop-start" class="bg-gradient-to-b from-emerald-400 to-emerald-600 hover:from-emerald-300 hover:to-emerald-500 active:scale-95 text-slate-950 font-black px-3.5 py-2 rounded-xl text-xs shadow-md cursor-pointer transition flex items-center gap-1.5">
+                    <span>🛒</span><span>TIENDA DEL SINDICATO</span>
+                </button>
+            </div>
+
+            <button id="btn-start" class="btn-play w-full py-3.5 rounded-2xl font-black text-slate-950 text-xl tracking-wide shadow-xl cursor-pointer">
+                ¡EMPEZAR A CORRER!
+            </button>
+        </div>
+    </div>
+
+    <!-- Modal de la Tienda del Sindicato (Mejoras y Trajes) -->
+    <div id="shop-modal" class="hidden fixed inset-0 z-40 flex items-center justify-center p-4 bg-slate-950/85 backdrop-blur-md">
+        <div class="arcade-card w-full max-w-md rounded-3xl p-5 text-white flex flex-col gap-3.5 max-h-[92vh] overflow-y-auto">
+            <div class="flex items-center justify-between border-b border-slate-700 pb-2.5">
+                <div>
+                    <h2 class="text-2xl font-extrabold text-amber-400 arcade-text">🛒 TIENDA DEL SINDICATO</h2>
+                    <p class="text-[11px] text-slate-300">Mejora tu equipo y viste nuevos uniformes de obra</p>
+                </div>
+                <div class="bg-slate-900 border-2 border-yellow-400 px-3 py-1 rounded-2xl text-right">
+                    <div class="text-[9px] text-yellow-200 uppercase font-bold">Saldo Total</div>
+                    <div class="text-base font-black text-yellow-400"><span id="shop-bank-coins">0</span> $</div>
+                </div>
+            </div>
+
+            <!-- Sección 1: Mejoras de Equipo -->
+            <div class="space-y-2">
+                <div class="text-xs font-extrabold text-cyan-300 uppercase tracking-wider">🔧 Mejoras Permanentes:</div>
+                <div class="bg-slate-900/90 border border-slate-700 p-3 rounded-2xl flex items-center justify-between gap-2">
+                    <div>
+                        <div class="font-extrabold text-sm text-white">⏱️ Batería de Cajas [?]</div>
+                        <div id="upg-powerup-desc" class="text-[11px] text-slate-300">Duración actual: <b class="text-amber-300">12s</b></div>
+                    </div>
+                    <button id="btn-buy-powerup" class="bg-amber-500 hover:bg-amber-400 active:scale-95 text-slate-950 font-black px-3 py-2 rounded-xl text-xs shadow cursor-pointer transition shrink-0">
+                        MEJORAR (150 $)
+                    </button>
+                </div>
+
+                <div class="bg-slate-900/90 border border-slate-700 p-3 rounded-2xl flex items-center justify-between gap-2">
+                    <div>
+                        <div class="font-extrabold text-sm text-white">⛑️ Recarga de Casco Dorado</div>
+                        <div id="upg-hardhat-desc" class="text-[11px] text-slate-300">Enfriamiento: <b class="text-amber-300">18s</b></div>
+                    </div>
+                    <button id="btn-buy-hardhat" class="bg-amber-500 hover:bg-amber-400 active:scale-95 text-slate-950 font-black px-3 py-2 rounded-xl text-xs shadow cursor-pointer transition shrink-0">
+                        MEJORAR (150 $)
+                    </button>
+                </div>
+            </div>
+
+            <!-- Sección 2: Trajes / Skins de Obra -->
+            <div class="space-y-2">
+                <div class="text-xs font-extrabold text-emerald-300 uppercase tracking-wider">👷‍♂️ Uniformes del Sindicato:</div>
+                <div id="skins-container" class="grid grid-cols-2 gap-2"></div>
+            </div>
+
+            <div id="shop-feedback" class="text-center text-xs font-bold text-amber-300 min-h-[16px]"></div>
+
+            <button id="btn-close-shop" class="bg-slate-800 hover:bg-slate-700 active:scale-95 border-2 border-slate-600 text-white font-black py-2.5 rounded-2xl text-sm shadow cursor-pointer transition">
+                ✖️ VOLVER
+            </button>
+        </div>
+    </div>
+
+    <!-- Pantalla de Fin de Juego (Game Over) -->
+    <div id="gameover-screen" class="hidden fixed inset-0 z-30 flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-md">
+        <div class="arcade-card w-full max-w-sm rounded-3xl p-6 text-white text-center flex flex-col gap-4">
+            <div class="text-5xl">🚓👷‍♂️</div>
+            <div>
+                <h2 id="gameover-title" class="text-3xl font-extrabold text-red-400 arcade-text">¡ARRESTADO!</h2>
+                <p id="gameover-reason" class="text-xs text-slate-300 mt-1">El oficial te alcanzó en la zona de obras.</p>
+            </div>
+
+            <div class="grid grid-cols-3 gap-2 bg-slate-900/90 p-3 rounded-2xl border border-slate-700">
+                <div>
+                    <div class="text-[10px] text-slate-400 uppercase font-bold">Distancia</div>
+                    <div id="final-score" class="text-lg font-extrabold text-white">0 m</div>
+                </div>
+                <div class="border-x border-slate-700">
+                    <div class="text-[10px] text-yellow-400 uppercase font-bold">Monedas</div>
+                    <div id="final-coins" class="text-lg font-extrabold text-yellow-400">0</div>
+                </div>
+                <div>
+                    <div class="text-[10px] text-amber-400 uppercase font-bold">Récord</div>
+                    <div id="final-best" class="text-lg font-extrabold text-amber-400">0 m</div>
+                </div>
+            </div>
+
+            <!-- Tragamonedas "Bono del Capataz" (Estilo Jetpack Joyride) -->
+            <div id="slot-machine-panel" class="bg-slate-900/95 border-2 border-cyan-500/80 rounded-2xl p-3 flex flex-col gap-2 shadow-inner">
+                <div class="flex items-center justify-between text-xs font-bold">
+                    <span class="text-cyan-300 uppercase tracking-wider">🎰 Tragamonedas del Capataz</span>
+                    <span class="bg-slate-800 px-2 py-0.5 rounded-lg text-amber-300">Fichas ⚙️: <b id="slot-tokens-count">0</b></span>
+                </div>
+                <div class="grid grid-cols-3 gap-2 my-1">
+                    <div id="reel-1" class="bg-slate-950 border-2 border-amber-400 rounded-xl h-14 flex items-center justify-center text-3xl shadow-inner">⚙️</div>
+                    <div id="reel-2" class="bg-slate-950 border-2 border-amber-400 rounded-xl h-14 flex items-center justify-center text-3xl shadow-inner">💰</div>
+                    <div id="reel-3" class="bg-slate-950 border-2 border-amber-400 rounded-xl h-14 flex items-center justify-center text-3xl shadow-inner">❤️</div>
+                </div>
+                <div id="slot-result-msg" class="text-[11px] text-slate-300 font-bold min-h-[16px]">
+                    ¡Usa 1 Ficha ⚙️ para girar por Segunda Oportunidad, Bomba Impulsora o Monedas x2!
+                </div>
+                <button id="btn-spin-slot" class="bg-gradient-to-b from-cyan-400 to-blue-600 hover:from-cyan-300 hover:to-blue-500 active:scale-95 text-slate-950 font-black py-2 rounded-xl text-sm shadow-lg cursor-pointer transition">
+                    🎰 GIRAR RULETA (1 ⚙️)
+                </button>
+            </div>
+
+            <div class="grid grid-cols-2 gap-2">
+                <button id="btn-open-shop-over" class="bg-gradient-to-b from-emerald-400 to-emerald-600 hover:from-emerald-300 hover:to-emerald-500 active:scale-95 text-slate-950 font-black py-3 rounded-2xl text-sm shadow-xl cursor-pointer flex items-center justify-center gap-1.5">
+                    <span>🛒</span><span>TIENDA (<span id="over-bank-coins">0</span>$)</span>
+                </button>
+                <button id="btn-restart" class="btn-play py-3 rounded-2xl font-black text-slate-950 text-base tracking-wide shadow-xl cursor-pointer">
+                    🔄 REINTENTAR
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        /* ============================================================================
+         * 1. SISTEMA DE AUDIO SINTETIZADO (WEB AUDIO API)
+         * Genera claxon de carros, monedas, saltos, sirena policial, tropiezos y cajas
+         * ============================================================================ */
+        class SoundSystem {
+            constructor() {
+                this.ctx = null;
+                this.muted = false;
+                this.lastCoinTime = 0;
+                this.lastHornTime = 0;
+            }
+
+            init() {
+                try {
+                    if (!this.ctx) {
+                        const AudioCtx = window.AudioContext || window.webkitAudioContext;
+                        if (AudioCtx) this.ctx = new AudioCtx();
+                    }
+                    if (this.ctx && this.ctx.state === 'suspended') {
+                        this.ctx.resume();
+                    }
+                } catch (e) {
+                    console.warn('AudioContext no disponible:', e);
+                }
+            }
+
+            toggleMute() {
+                this.muted = !this.muted;
+                return this.muted;
+            }
+
+            playCoin() {
+                if (this.muted || !this.ctx) return;
+                const now = this.ctx.currentTime;
+                if (now - this.lastCoinTime < 0.045) return; // Evita saturar el hilo de audio
+                this.lastCoinTime = now;
+                try {
+                    const osc = this.ctx.createOscillator();
+                    const gain = this.ctx.createGain();
+                    osc.type = 'sine';
+                    osc.frequency.setValueAtTime(987.77, now); // B5
+                    osc.frequency.setValueAtTime(1318.51, now + 0.06); // E6
+                    gain.gain.setValueAtTime(0.12, now);
+                    gain.gain.exponentialRampToValueAtTime(0.001, now + 0.2);
+                    osc.connect(gain);
+                    gain.connect(this.ctx.destination);
+                    osc.start(now);
+                    osc.stop(now + 0.21);
+                } catch (e) {}
+            }
+
+            playJump(superJump = false) {
+                if (this.muted || !this.ctx) return;
+                try {
+                    const now = this.ctx.currentTime;
+                    const osc = this.ctx.createOscillator();
+                    const gain = this.ctx.createGain();
+                    osc.type = superJump ? 'triangle' : 'sine';
+                    osc.frequency.setValueAtTime(superJump ? 180 : 220, now);
+                    osc.frequency.exponentialRampToValueAtTime(superJump ? 760 : 520, now + 0.18);
+                    gain.gain.setValueAtTime(0.14, now);
+                    gain.gain.exponentialRampToValueAtTime(0.001, now + 0.2);
+                    osc.connect(gain);
+                    gain.connect(this.ctx.destination);
+                    osc.start(now);
+                    osc.stop(now + 0.21);
+                } catch (e) {}
+            }
+
+            playRoll() {
+                if (this.muted || !this.ctx) return;
+                try {
+                    const now = this.ctx.currentTime;
+                    const osc = this.ctx.createOscillator();
+                    const gain = this.ctx.createGain();
+                    osc.type = 'sine';
+                    osc.frequency.setValueAtTime(340, now);
+                    osc.frequency.exponentialRampToValueAtTime(110, now + 0.15);
+                    gain.gain.setValueAtTime(0.14, now);
+                    gain.gain.exponentialRampToValueAtTime(0.001, now + 0.16);
+                    osc.connect(gain);
+                    gain.connect(this.ctx.destination);
+                    osc.start(now);
+                    osc.stop(now + 0.17);
+                } catch (e) {}
+            }
+
+            // Claxon doble tono de carros y camiones que vienen de frente
+            playHorn(isTruck = false) {
+                if (this.muted || !this.ctx) return;
+                const now = this.ctx.currentTime;
+                if (now - this.lastHornTime < 0.25) return;
+                this.lastHornTime = now;
+                try {
+                    const freqs = isTruck ? [185, 233] : [392, 493.88];
+                    freqs.forEach(f => {
+                        const osc = this.ctx.createOscillator();
+                        const gain = this.ctx.createGain();
+                        osc.type = 'sawtooth';
+                        osc.frequency.setValueAtTime(f, now);
+                        gain.gain.setValueAtTime(0.07, now);
+                        gain.gain.setValueAtTime(0.001, now + 0.11);
+                        gain.gain.setValueAtTime(0.08, now + 0.15);
+                        gain.gain.exponentialRampToValueAtTime(0.001, now + 0.34);
+                        osc.connect(gain);
+                        gain.connect(this.ctx.destination);
+                        osc.start(now);
+                        osc.stop(now + 0.35);
+                    });
+                } catch (e) {}
+            }
+
+            // Tropiezo en bache + sirena corta del policía
+            playStumbleAndSiren() {
+                if (this.muted || !this.ctx) return;
+                const now = this.ctx.currentTime;
+                // Golpe grave del bache
+                const osc1 = this.ctx.createOscillator();
+                const g1 = this.ctx.createGain();
+                osc1.type = 'square';
+                osc1.frequency.setValueAtTime(140, now);
+                osc1.frequency.exponentialRampToValueAtTime(55, now + 0.22);
+                g1.gain.setValueAtTime(0.2, now);
+                g1.gain.exponentialRampToValueAtTime(0.001, now + 0.24);
+                osc1.connect(g1);
+                g1.connect(this.ctx.destination);
+                osc1.start(now);
+                osc1.stop(now + 0.25);
+
+                // Sirena de policía acercándose
+                const siren = this.ctx.createOscillator();
+                const g2 = this.ctx.createGain();
+                siren.type = 'triangle';
+                siren.frequency.setValueAtTime(650, now + 0.1);
+                siren.frequency.linearRampToValueAtTime(980, now + 0.32);
+                siren.frequency.linearRampToValueAtTime(650, now + 0.55);
+                siren.frequency.linearRampToValueAtTime(980, now + 0.78);
+                g2.gain.setValueAtTime(0.14, now + 0.1);
+                g2.gain.exponentialRampToValueAtTime(0.001, now + 0.82);
+                siren.connect(g2);
+                g2.connect(this.ctx.destination);
+                siren.start(now + 0.1);
+                siren.stop(now + 0.85);
+            }
+
+            playPowerupBox() {
+                if (this.muted || !this.ctx) return;
+                const now = this.ctx.currentTime;
+                const notes = [523.25, 659.25, 783.99, 1046.50];
+                notes.forEach((n, idx) => {
+                    const osc = this.ctx.createOscillator();
+                    const gain = this.ctx.createGain();
+                    osc.type = 'triangle';
+                    osc.frequency.setValueAtTime(n, now + idx * 0.065);
+                    gain.gain.setValueAtTime(0.16, now + idx * 0.065);
+                    gain.gain.exponentialRampToValueAtTime(0.001, now + idx * 0.065 + 0.22);
+                    osc.connect(gain);
+                    gain.connect(this.ctx.destination);
+                    osc.start(now + idx * 0.065);
+                    osc.stop(now + idx * 0.065 + 0.24);
+                });
+            }
+
+            playCrash(shieldSaved = false) {
+                if (this.muted || !this.ctx) return;
+                const now = this.ctx.currentTime;
+                const osc = this.ctx.createOscillator();
+                const gain = this.ctx.createGain();
+                osc.type = 'sawtooth';
+                osc.frequency.setValueAtTime(shieldSaved ? 280 : 130, now);
+                osc.frequency.exponentialRampToValueAtTime(35, now + 0.45);
+                gain.gain.setValueAtTime(0.25, now);
+                gain.gain.exponentialRampToValueAtTime(0.001, now + 0.46);
+                osc.connect(gain);
+                gain.connect(this.ctx.destination);
+                osc.start(now);
+                osc.stop(now + 0.48);
+            }
+
+            playNearMiss() {
+                if (this.muted || !this.ctx) return;
+                const now = this.ctx.currentTime;
+                const osc = this.ctx.createOscillator();
+                const gain = this.ctx.createGain();
+                osc.type = 'triangle';
+                osc.frequency.setValueAtTime(587.33, now);
+                osc.frequency.exponentialRampToValueAtTime(1174.66, now + 0.14);
+                gain.gain.setValueAtTime(0.16, now);
+                gain.gain.exponentialRampToValueAtTime(0.001, now + 0.16);
+                osc.connect(gain);
+                gain.connect(this.ctx.destination);
+                osc.start(now);
+                osc.stop(now + 0.17);
+            }
+
+            playCoffeeTurbo() {
+                if (this.muted || !this.ctx) return;
+                const now = this.ctx.currentTime;
+                [440, 554.37, 659.25, 880, 1108.73].forEach((freq, i) => {
+                    const osc = this.ctx.createOscillator();
+                    const gain = this.ctx.createGain();
+                    osc.type = 'sawtooth';
+                    osc.frequency.setValueAtTime(freq, now + i * 0.045);
+                    gain.gain.setValueAtTime(0.12, now + i * 0.045);
+                    gain.gain.exponentialRampToValueAtTime(0.001, now + i * 0.045 + 0.18);
+                    osc.connect(gain);
+                    gain.connect(this.ctx.destination);
+                    osc.start(now + i * 0.045);
+                    osc.stop(now + i * 0.045 + 0.2);
+                });
+            }
+
+            playGeyserBounce() {
+                if (this.muted || !this.ctx) return;
+                const now = this.ctx.currentTime;
+                const osc = this.ctx.createOscillator();
+                const gain = this.ctx.createGain();
+                osc.type = 'sine';
+                osc.frequency.setValueAtTime(190, now);
+                osc.frequency.exponentialRampToValueAtTime(880, now + 0.28);
+                gain.gain.setValueAtTime(0.18, now);
+                gain.gain.exponentialRampToValueAtTime(0.001, now + 0.3);
+                osc.connect(gain);
+                gain.connect(this.ctx.destination);
+                osc.start(now);
+                osc.stop(now + 0.31);
+            }
+
+            playCementSplat() {
+                if (this.muted || !this.ctx) return;
+                const now = this.ctx.currentTime;
+                const osc = this.ctx.createOscillator();
+                const gain = this.ctx.createGain();
+                osc.type = 'triangle';
+                osc.frequency.setValueAtTime(160, now);
+                osc.frequency.linearRampToValueAtTime(65, now + 0.22);
+                gain.gain.setValueAtTime(0.2, now);
+                gain.gain.exponentialRampToValueAtTime(0.001, now + 0.24);
+                osc.connect(gain);
+                gain.connect(this.ctx.destination);
+                osc.start(now);
+                osc.stop(now + 0.25);
+            }
+
+            playSlotTick(win = false) {
+                if (this.muted || !this.ctx) return;
+                const now = this.ctx.currentTime;
+                const osc = this.ctx.createOscillator();
+                const gain = this.ctx.createGain();
+                osc.type = win ? 'triangle' : 'square';
+                osc.frequency.setValueAtTime(win ? 880 : 440, now);
+                if (win) osc.frequency.setValueAtTime(1318.5, now + 0.09);
+                gain.gain.setValueAtTime(0.12, now);
+                gain.gain.exponentialRampToValueAtTime(0.001, now + (win ? 0.28 : 0.06));
+                osc.connect(gain);
+                gain.connect(this.ctx.destination);
+                osc.start(now);
+                osc.stop(now + (win ? 0.3 : 0.07));
+            }
+        }
+
+        const sfx = new SoundSystem();
+
+        /* ============================================================================
+         * 2. CONFIGURACIÓN DEL JUEGO Y TEXTURAS PROCEDURALES
+         * ============================================================================ */
+        const LANES = [-3.2, 0, 3.2];
+        const GRAVITY = -38;
+        const JUMP_VELOCITY = 14.5;
+        const POGO_VELOCITY = 19.5;
+
+        // Catálogo de Uniformes / Skins del Sindicato
+        const WORKER_SKINS = [
+            {
+                id: 'clasico',
+                name: 'Obrero Clásico',
+                desc: 'Chaleco naranja y casco amarillo',
+                cost: 0,
+                vestColor: 0xf97316,
+                shirtColor: 0x1e3a8a,
+                pantsColor: 0x1e293b,
+                helmetColor: 0xfacc15,
+                visorColor: null
+            },
+            {
+                id: 'nocturno',
+                name: 'Turno Nocturno',
+                desc: 'Chaleco verde neón fosforescente',
+                cost: 180,
+                vestColor: 0x22c55e,
+                shirtColor: 0x0f172a,
+                pantsColor: 0x090d16,
+                helmetColor: 0xa3e635,
+                visorColor: null
+            },
+            {
+                id: 'ingeniero',
+                name: 'Ingeniero Jefe',
+                desc: 'Casco blanco ejecutivo y traje azul',
+                cost: 320,
+                vestColor: 0x38bdf8,
+                shirtColor: 0xf8fafc,
+                pantsColor: 0x1e3a8a,
+                helmetColor: 0xffffff,
+                visorColor: 0x0284c7
+            },
+            {
+                id: 'soldador',
+                name: 'Maestro Soldador',
+                desc: 'Careta metálica y traje ignífugo',
+                cost: 500,
+                vestColor: 0xdc2626,
+                shirtColor: 0x334155,
+                pantsColor: 0x18181b,
+                helmetColor: 0x94a3b8,
+                visorColor: 0xf59e0b
+            }
+        ];
+
+        const POWERUP_TYPES = [
+            {
+                id: 'pogo',
+                name: 'MARTILLO NEUMÁTICO SALTARÍN',
+                icon: '🔨',
+                color: '#fbbf24'
+            },
+            {
+                id: 'bulldozer',
+                name: 'MINI-EXCAVADORA BLINDADA',
+                icon: '🚜',
+                color: '#f97316'
+            },
+            {
+                id: 'jetpack',
+                name: 'JETPACK SOLDADOR AÉREO',
+                icon: '🚀',
+                color: '#38bdf8'
+            },
+            {
+                id: 'magnet_mech',
+                name: 'MECHA GRÚA MAGNÉTICA',
+                icon: '🧲',
+                color: '#c084fc'
+            }
+        ];
+
+        // Textura para la Caja Misteriosa Multicolor con signo '?'
+        function createMysteryBoxTexture() {
+            const c = document.createElement('canvas');
+            c.width = 256;
+            c.height = 256;
+            const ctx = c.getContext('2d');
+
+            const grad = ctx.createLinearGradient(0, 0, 256, 256);
+            grad.addColorStop(0, '#ef4444');
+            grad.addColorStop(0.25, '#f59e0b');
+            grad.addColorStop(0.5, '#10b981');
+            grad.addColorStop(0.75, '#3b82f6');
+            grad.addColorStop(1, '#a855f7');
+            ctx.fillStyle = grad;
+            ctx.fillRect(0, 0, 256, 256);
+
+            // Marco interior
+            ctx.lineWidth = 18;
+            ctx.strokeStyle = 'rgba(255,255,255,0.85)';
+            ctx.strokeRect(14, 14, 228, 228);
+
+            // Sombra y signo '?'
+            ctx.font = '900 165px Fredoka, sans-serif';
+            ctx.textAlign = 'center';
+            ctx.textBaseline = 'middle';
+            ctx.fillStyle = 'rgba(0,0,0,0.45)';
+            ctx.fillText('?', 134, 142);
+            ctx.fillStyle = '#ffffff';
+            ctx.fillText('?', 128, 134);
+
+            const tex = new THREE.CanvasTexture(c);
+            return tex;
+        }
+
+        // Textura a rayas naranjas y blancas para barreras de construcción
+        function createStripeTexture() {
+            const c = document.createElement('canvas');
+            c.width = 256;
+            c.height = 64;
+            const ctx = c.getContext('2d');
+            ctx.fillStyle = '#ffffff';
+            ctx.fillRect(0, 0, 256, 64);
+            ctx.fillStyle = '#ea580c';
+            for (let i = -64; i < 320; i += 64) {
+                ctx.beginPath();
+                ctx.moveTo(i, 0);
+                ctx.lineTo(i + 32, 0);
+                ctx.lineTo(i + 12, 64);
+                ctx.lineTo(i - 20, 64);
+                ctx.closePath();
+                ctx.fill();
+            }
+            const tex = new THREE.CanvasTexture(c);
+            tex.wrapS = THREE.RepeatWrapping;
+            tex.wrapT = THREE.RepeatWrapping;
+            return tex;
+        }
+
+        // Textura de madera con flechas para las rampas
+        function createRampTexture() {
+            const c = document.createElement('canvas');
+            c.width = 128;
+            c.height = 256;
+            const ctx = c.getContext('2d');
+            ctx.fillStyle = '#92400e';
+            ctx.fillRect(0, 0, 128, 256);
+            // Tablones
+            ctx.strokeStyle = '#78350f';
+            ctx.lineWidth = 4;
+            for (let y = 0; y < 256; y += 24) {
+                ctx.beginPath();
+                ctx.moveTo(0, y);
+                ctx.lineTo(128, y);
+                ctx.stroke();
+            }
+            // Flechas amarillas de subida
+            ctx.fillStyle = '#facc15';
+            for (let y = 50; y < 230; y += 75) {
+                ctx.beginPath();
+                ctx.moveTo(64, y - 22);
+                ctx.lineTo(100, y + 12);
+                ctx.lineTo(80, y + 12);
+                ctx.lineTo(64, y - 4);
+                ctx.lineTo(48, y + 12);
+                ctx.lineTo(28, y + 12);
+                ctx.closePath();
+                ctx.fill();
+            }
+            return new THREE.CanvasTexture(c);
+        }
+
+        // Texturas cacheadas para las 4 letras coleccionables: O - B - R - A
+        const letterTextures = {};
+        ['O', 'B', 'R', 'A'].forEach(letter => {
+            const c = document.createElement('canvas');
+            c.width = 128;
+            c.height = 128;
+            const ctx = c.getContext('2d');
+            ctx.fillStyle = '#f59e0b';
+            ctx.fillRect(0, 0, 128, 128);
+            ctx.lineWidth = 10;
+            ctx.strokeStyle = '#fef08a';
+            ctx.strokeRect(8, 8, 112, 112);
+            ctx.font = '900 86px Fredoka, sans-serif';
+            ctx.textAlign = 'center';
+            ctx.textBaseline = 'middle';
+            ctx.fillStyle = '#0f172a';
+            ctx.fillText(letter, 64, 68);
+            letterTextures[letter] = new THREE.CanvasTexture(c);
+        });
+
+        /* ============================================================================
+         * 3. ESCENA THREE.JS Y CONSTRUCCIÓN DE PERSONAJES (OBRERO Y POLICÍA)
+         * ============================================================================ */
+        const canvas = document.getElementById('game-canvas');
+        const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, powerPreference: 'default' });
+        renderer.setSize(window.innerWidth, window.innerHeight);
+        renderer.setPixelRatio(Math.min(window.devicePixelRatio, 1.5));
+        renderer.shadowMap.enabled = false; // Desactivar sombras pesadas evita caídas de GPU y pantallas en blanco en móviles
+
+        // Prevención y recuperación automática si el navegador pierde el contexto WebGL
+        canvas.addEventListener('webglcontextlost', (e) => {
+            e.preventDefault();
+            state.playing = false;
+        }, false);
+
+        const scene = new THREE.Scene();
+        scene.background = new THREE.Color(0x38bdf8);
+        scene.fog = new THREE.FogExp2(0x38bdf8, 0.0085);
+
+        const camera = new THREE.PerspectiveCamera(62, window.innerWidth / window.innerHeight, 0.1, 150);
+        camera.position.set(0, 6.4, 10.5);
+        camera.lookAt(0, 2.0, -8);
+
+        // Iluminación ligera y de alto rendimiento
+        const hemiLight = new THREE.HemisphereLight(0xffffff, 0x334155, 0.85);
+        scene.add(hemiLight);
+
+        const dirLight = new THREE.DirectionalLight(0xfffbeb, 0.85);
+        dirLight.position.set(18, 35, 22);
+        scene.add(dirLight);
+
+        const mysteryBoxTexture = createMysteryBoxTexture();
+        const stripeTexture = createStripeTexture();
+        const rampTexture = createRampTexture();
+
+        // Materiales compartidos globales (evita fugas de memoria en la tarjeta gráfica)
+        const matRoad = new THREE.MeshLambertMaterial({ color: 0x334155 });
+        const matSidewalk = new THREE.MeshLambertMaterial({ color: 0x94a3b8 });
+        const matYellowLine = new THREE.MeshBasicMaterial({ color: 0xfacc15 });
+        const matWhiteLine = new THREE.MeshBasicMaterial({ color: 0xf8fafc });
+        const matCoin = new THREE.MeshLambertMaterial({ color: 0xfacc15, emissive: 0xca8a04, emissiveIntensity: 0.25 });
+        const matLampPost = new THREE.MeshLambertMaterial({ color: 0x475569 });
+        const matLampBulb = new THREE.MeshBasicMaterial({ color: 0x64748b }); // Cambia a amarillo brillante de noche
+        const matBuildingWindow = new THREE.MeshBasicMaterial({ color: 0x334155 }); // Ventanas que se iluminan de noche
+
+        // Función segura para eliminar grupos de la escena sin saturar la RAM/GPU
+        function safeRemoveGroup(group) {
+            if (!group) return;
+            scene.remove(group);
+        }
+
+        function createWorkerCharacter() {
+            const root = new THREE.Group();
+            const bodyGroup = new THREE.Group();
+            bodyGroup.position.y = 1.15;
+            root.add(bodyGroup);
+
+            const vestMat = new THREE.MeshLambertMaterial({ color: 0xf97316 }); // Chaleco naranja de obra
+            const shirtMat = new THREE.MeshLambertMaterial({ color: 0x1e3a8a }); // Camisa azul de mezclilla
+            const pantsMat = new THREE.MeshLambertMaterial({ color: 0x1e293b }); // Pantalón de trabajo oscuro
+            const bootMat = new THREE.MeshLambertMaterial({ color: 0x78350f });  // Botas de cuero
+            const skinMat = new THREE.MeshLambertMaterial({ color: 0xfdba74 });  // Piel
+            const stripeMat = new THREE.MeshBasicMaterial({ color: 0xfef08a });  // Cintas reflectantes amarillas
+            const helmetMat = new THREE.MeshLambertMaterial({ color: 0xfacc15 }); // Casco amarillo/dorado
+
+            // Torso con chaleco reflectante y cintas en "X" en la espalda
+            const torso = new THREE.Mesh(new THREE.BoxGeometry(0.76, 0.92, 0.44), vestMat);
+            torso.position.y = 0.38;
+            bodyGroup.add(torso);
+
+            const stripeBack1 = new THREE.Mesh(new THREE.BoxGeometry(0.12, 0.82, 0.04), stripeMat);
+            stripeBack1.position.set(0, 0.38, 0.23);
+            stripeBack1.rotation.z = 0.52;
+            const stripeBack2 = stripeBack1.clone();
+            stripeBack2.rotation.z = -0.52;
+            bodyGroup.add(stripeBack1, stripeBack2);
+
+            const belt = new THREE.Mesh(new THREE.BoxGeometry(0.8, 0.15, 0.48), bootMat);
+            belt.position.y = -0.05;
+            bodyGroup.add(belt);
+
+            // Cuello, cabeza y Casco de Obrero con visera
+            const neck = new THREE.Mesh(new THREE.CylinderGeometry(0.14, 0.16, 0.2, 8), skinMat);
+            neck.position.y = 0.92;
+            bodyGroup.add(neck);
+
+            const head = new THREE.Mesh(new THREE.SphereGeometry(0.33, 12, 12), skinMat);
+            head.position.y = 1.18;
+            bodyGroup.add(head);
+
+            const helmetDome = new THREE.Mesh(new THREE.SphereGeometry(0.37, 12, 10, 0, Math.PI * 2, 0, Math.PI * 0.62), helmetMat);
+            helmetDome.position.y = 1.22;
+            const helmetBrim = new THREE.Mesh(new THREE.CylinderGeometry(0.42, 0.42, 0.06, 12), helmetMat);
+            helmetBrim.position.set(0, 1.22, -0.05);
+            bodyGroup.add(helmetDome, helmetBrim);
+
+            // Visor / Careta para los trajes de Ingeniero Jefe y Maestro Soldador
+            const visorMat = new THREE.MeshBasicMaterial({ color: 0xf59e0b });
+            const visorMesh = new THREE.Mesh(new THREE.BoxGeometry(0.52, 0.22, 0.16), visorMat);
+            visorMesh.position.set(0, 1.18, -0.31);
+            visorMesh.visible = false;
+            bodyGroup.add(visorMesh);
+
+            // Piernas articuladas desde la cadera con botas de obra
+            function createLeg(isLeft) {
+                const legPivot = new THREE.Group();
+                legPivot.position.set(isLeft ? -0.21 : 0.21, -0.1, 0);
+
+                const legMesh = new THREE.Mesh(new THREE.CylinderGeometry(0.15, 0.13, 0.75, 10), pantsMat);
+                legMesh.position.y = -0.38;
+                legPivot.add(legMesh);
+
+                const boot = new THREE.Mesh(new THREE.BoxGeometry(0.24, 0.22, 0.38), bootMat);
+                boot.position.set(0, -0.82, -0.05);
+                legPivot.add(boot);
+
+                return legPivot;
+            }
+
+            const leftLeg = createLeg(true);
+            const rightLeg = createLeg(false);
+            bodyGroup.add(leftLeg, rightLeg);
+
+            // Brazos articulados desde el hombro (con manga, antebrazo y guante)
+            function createArm(isLeft) {
+                const armPivot = new THREE.Group();
+                armPivot.position.set(isLeft ? -0.5 : 0.5, 0.74, 0);
+
+                const shoulder = new THREE.Mesh(new THREE.SphereGeometry(0.15, 10, 10), shirtMat);
+                armPivot.add(shoulder);
+
+                const armMesh = new THREE.Mesh(new THREE.CylinderGeometry(0.12, 0.1, 0.65, 10), skinMat);
+                armMesh.position.y = -0.32;
+                armMesh.castShadow = true;
+                armPivot.add(armMesh);
+
+                const glove = new THREE.Mesh(new THREE.SphereGeometry(0.13, 10, 10), helmetMat);
+                glove.position.y = -0.68;
+                armPivot.add(glove);
+
+                return armPivot;
+            }
+
+            const leftArm = createArm(true);
+            const rightArm = createArm(false);
+            bodyGroup.add(leftArm, rightArm);
+
+            // --- ACCESORIOS DE POTENCIADORES (100% Ocultos cuando corres normal) ---
+            // 1. Martillo Neumático Saltarín (Pogo Jackhammer bajo las botas)
+            const pogoGroup = new THREE.Group();
+            const pogoBody = new THREE.Mesh(new THREE.CylinderGeometry(0.18, 0.14, 1.0, 10), new THREE.MeshLambertMaterial({ color: 0xeab308 }));
+            pogoBody.position.set(0, 0.55, -0.35);
+            const pogoHandle = new THREE.Mesh(new THREE.BoxGeometry(0.85, 0.1, 0.1), new THREE.MeshLambertMaterial({ color: 0x1f2937 }));
+            pogoHandle.position.set(0, 1.1, -0.35);
+            const pogoBit = new THREE.Mesh(new THREE.CylinderGeometry(0.05, 0.02, 0.6, 8), new THREE.MeshLambertMaterial({ color: 0x94a3b8 }));
+            pogoBit.position.set(0, 0.05, -0.35);
+            pogoGroup.add(pogoBody, pogoHandle, pogoBit);
+            pogoGroup.visible = false;
+            root.add(pogoGroup);
+
+            // 2. Mini-Excavadora Blindada (El obrero va montado encima manejándola)
+            const dozerGroup = new THREE.Group();
+            const dozerCab = new THREE.Mesh(new THREE.BoxGeometry(1.9, 0.9, 2.2), new THREE.MeshLambertMaterial({ color: 0xf59e0b }));
+            dozerCab.position.set(0, 0.55, 0);
+            const dozerBlade = new THREE.Mesh(new THREE.BoxGeometry(2.35, 0.85, 0.35), new THREE.MeshLambertMaterial({ color: 0x475569 }));
+            dozerBlade.position.set(0, 0.45, -1.25);
+            const trackL = new THREE.Mesh(new THREE.BoxGeometry(0.32, 0.5, 2.2), new THREE.MeshLambertMaterial({ color: 0x0f172a }));
+            trackL.position.set(-1.0, 0.25, 0);
+            const trackR = trackL.clone();
+            trackR.position.x = 1.0;
+            dozerGroup.add(dozerCab, dozerBlade, trackL, trackR);
+            dozerGroup.visible = false;
+            root.add(dozerGroup);
+
+            // 3. Jetpack Soldador (Tanques dobles en la espalda)
+            const jetpackGroup = new THREE.Group();
+            const tankGeo = new THREE.CylinderGeometry(0.16, 0.16, 0.8, 10);
+            const tankL = new THREE.Mesh(tankGeo, new THREE.MeshLambertMaterial({ color: 0x0284c7 }));
+            tankL.position.set(-0.2, 0.4, 0.32);
+            const tankR = new THREE.Mesh(tankGeo, new THREE.MeshLambertMaterial({ color: 0xdc2626 }));
+            tankR.position.set(0.2, 0.4, 0.32);
+            jetpackGroup.add(tankL, tankR);
+            jetpackGroup.visible = false;
+            bodyGroup.add(jetpackGroup);
+
+            // 4. Mecha Grúa Magnética (Imán suspendido sobre el casco)
+            const magnetGroup = new THREE.Group();
+            const magnetU = new THREE.Mesh(new THREE.TorusGeometry(0.55, 0.14, 8, 16, Math.PI), new THREE.MeshBasicMaterial({ color: 0xef4444 }));
+            magnetU.position.set(0, 3.0, 0);
+            magnetU.rotation.x = Math.PI / 2;
+            magnetGroup.add(magnetU);
+            magnetGroup.visible = false;
+            root.add(magnetGroup);
+
+            // Halo sutil de Escudo / Casco Dorado Protector (no tapa al personaje)
+            const shieldMesh = new THREE.Mesh(
+                new THREE.TorusGeometry(0.95, 0.06, 10, 24),
+                new THREE.MeshBasicMaterial({ color: 0x38bdf8, transparent: true, opacity: 0.75 })
+            );
+            shieldMesh.rotation.x = Math.PI / 2;
+            shieldMesh.position.y = 1.1;
+            shieldMesh.visible = false;
+            root.add(shieldMesh);
+
+            return {
+                root,
+                bodyGroup,
+                vestMat,
+                shirtMat,
+                pantsMat,
+                helmetMat,
+                visorMat,
+                visorMesh,
+                leftLeg,
+                rightLeg,
+                leftArm,
+                rightArm,
+                pogoGroup,
+                dozerGroup,
+                jetpackGroup,
+                magnetGroup,
+                shieldMesh
+            };
+        }
+
+        // Construcción del Policía Perseguidor (Humanoide Articulado)
+        function createPoliceOfficer() {
+            const root = new THREE.Group();
+            const bodyGroup = new THREE.Group();
+            bodyGroup.position.y = 1.15;
+            root.add(bodyGroup);
+
+            const uniformMat = new THREE.MeshLambertMaterial({ color: 0x1e3a8a });
+            const darkBlueMat = new THREE.MeshLambertMaterial({ color: 0x0f172a });
+            const skinMat = new THREE.MeshLambertMaterial({ color: 0xfdba74 });
+            const badgeMat = new THREE.MeshBasicMaterial({ color: 0xfacc15 });
+
+            const torso = new THREE.Mesh(new THREE.BoxGeometry(0.76, 0.94, 0.42), uniformMat);
+            torso.position.y = 0.38;
+            torso.castShadow = true;
+            bodyGroup.add(torso);
+
+            const belt = new THREE.Mesh(new THREE.BoxGeometry(0.79, 0.14, 0.45), darkBlueMat);
+            belt.position.y = -0.05;
+            bodyGroup.add(belt);
+
+            const head = new THREE.Mesh(new THREE.SphereGeometry(0.33, 12, 12), skinMat);
+            head.position.y = 1.18;
+            bodyGroup.add(head);
+
+            // Gorra Policial octogonal y luces de sirena en las hombreras
+            const capTop = new THREE.Mesh(new THREE.CylinderGeometry(0.42, 0.36, 0.22, 8), darkBlueMat);
+            capTop.position.y = 1.48;
+            const capBadge = new THREE.Mesh(new THREE.BoxGeometry(0.14, 0.14, 0.1), badgeMat);
+            capBadge.position.set(0, 1.48, -0.36);
+            bodyGroup.add(capTop, capBadge);
+
+            const sirenRed = new THREE.Mesh(new THREE.SphereGeometry(0.14, 8, 8), new THREE.MeshBasicMaterial({ color: 0xef4444 }));
+            sirenRed.position.set(-0.45, 0.9, 0);
+            const sirenBlue = new THREE.Mesh(new THREE.SphereGeometry(0.14, 8, 8), new THREE.MeshBasicMaterial({ color: 0x3b82f6 }));
+            sirenBlue.position.set(0.45, 0.9, 0);
+            bodyGroup.add(sirenRed, sirenBlue);
+
+            const legGeo = new THREE.CylinderGeometry(0.15, 0.12, 0.85, 8);
+            const leftLeg = new THREE.Mesh(legGeo, darkBlueMat);
+            leftLeg.position.set(-0.21, -0.5, 0);
+            const rightLeg = new THREE.Mesh(legGeo, darkBlueMat);
+            rightLeg.position.set(0.21, -0.5, 0);
+            bodyGroup.add(leftLeg, rightLeg);
+
+            const armGeo = new THREE.CylinderGeometry(0.11, 0.09, 0.72, 8);
+            const leftArm = new THREE.Mesh(armGeo, uniformMat);
+            leftArm.position.set(-0.5, 0.4, 0);
+            const rightArm = new THREE.Mesh(armGeo, uniformMat);
+            rightArm.position.set(0.5, 0.4, 0);
+            bodyGroup.add(leftArm, rightArm);
+
+            return { root, leftLeg, rightLeg, leftArm, rightArm, sirenRed, sirenBlue };
+        }
+
+        const worker = createWorkerCharacter();
+        scene.add(worker.root);
+
+        const police = createPoliceOfficer();
+        scene.add(police.root);
+
+        /* ============================================================================
+         * 4. ESCENARIO REUTILIZABLE (CALLE, ACERAS Y EDIFICIOS CON ANDAMIOS)
+         * ============================================================================ */
+        const roadSegments = [];
+        const SEGMENT_LENGTH = 20;
+        const NUM_SEGMENTS = 10;
+
+        function createRoadSegment(zPos) {
+            const group = new THREE.Group();
+            group.position.z = zPos;
+
+            // Asfalto central (3 carriles)
+            const road = new THREE.Mesh(new THREE.BoxGeometry(11.6, 0.2, SEGMENT_LENGTH), matRoad);
+            road.position.y = -0.1;
+            road.receiveShadow = true;
+            group.add(road);
+
+            // Aceras laterales
+            const sidewalkL = new THREE.Mesh(new THREE.BoxGeometry(6, 0.45, SEGMENT_LENGTH), matSidewalk);
+            sidewalkL.position.set(-8.8, 0.1, 0);
+            sidewalkL.receiveShadow = true;
+            const sidewalkR = sidewalkL.clone();
+            sidewalkR.position.x = 8.8;
+            group.add(sidewalkL, sidewalkR);
+
+            // Líneas divisoras de los 3 carriles
+            for (let z = -SEGMENT_LENGTH / 2 + 2.5; z < SEGMENT_LENGTH / 2; z += 5) {
+                const dash1 = new THREE.Mesh(new THREE.BoxGeometry(0.18, 0.04, 2.4), matWhiteLine);
+                dash1.position.set(-1.6, 0.02, z);
+                const dash2 = dash1.clone();
+                dash2.position.x = 1.6;
+                group.add(dash1, dash2);
+            }
+
+            // Edificios laterales y andamios de construcción
+            const bColors = [0x475569, 0x64748b, 0xb45309, 0x334155, 0x78350f];
+            [-1, 1].forEach(side => {
+                const bHeight = 8 + Math.random() * 12;
+                const bMat = new THREE.MeshLambertMaterial({ color: bColors[Math.floor(Math.random() * bColors.length)] });
+                const building = new THREE.Mesh(new THREE.BoxGeometry(5.5, bHeight, SEGMENT_LENGTH - 1.2), bMat);
+                building.position.set(side * 12.2, bHeight / 2, 0);
+                group.add(building);
+
+                // Ventanas en la fachada que se encienden en el Turno Nocturno
+                for (let wy = 2.5; wy < bHeight - 1.5; wy += 3.0) {
+                    const win = new THREE.Mesh(new THREE.BoxGeometry(0.12, 1.3, 2.2), matBuildingWindow);
+                    win.position.set(side * 9.42, wy, 2.5);
+                    group.add(win);
+                }
+
+                // Vigas naranjas de andamio de obra
+                const beam = new THREE.Mesh(
+                    new THREE.BoxGeometry(0.3, bHeight, 0.3),
+                    new THREE.MeshLambertMaterial({ color: 0xf97316 })
+                );
+                beam.position.set(side * 9.2, bHeight / 2, -4);
+                group.add(beam);
+
+                // Farolas de alumbrado público en las aceras (se encienden en el Atardecer/Noche)
+                const pole = new THREE.Mesh(new THREE.CylinderGeometry(0.1, 0.13, 5.4, 6), matLampPost);
+                pole.position.set(side * 6.3, 2.7, 3);
+                const arm = new THREE.Mesh(new THREE.BoxGeometry(1.3, 0.12, 0.12), matLampPost);
+                arm.position.set(side * 5.75, 5.35, 3);
+                const bulb = new THREE.Mesh(new THREE.SphereGeometry(0.28, 8, 8), matLampBulb);
+                bulb.position.set(side * 5.25, 5.18, 3);
+                group.add(pole, arm, bulb);
+            });
+
+            scene.add(group);
+            return group;
+        }
+
+        for (let i = 0; i < NUM_SEGMENTS; i++) {
+            roadSegments.push(createRoadSegment(-i * SEGMENT_LENGTH + 10));
+        }
+
+        // Sistema de partículas (Chispas del Jetpack, Explosión de Escudo y Destrucción de Carros)
+        const particles = [];
+        const MAX_PARTICLES = 45;
+        const particleGeo = new THREE.BoxGeometry(0.28, 0.28, 0.28);
+        const particleMatCache = {};
+
+        function getParticleMaterial(colorHex) {
+            if (!particleMatCache[colorHex]) {
+                particleMatCache[colorHex] = new THREE.MeshBasicMaterial({ color: colorHex });
+            }
+            return particleMatCache[colorHex];
+        }
+
+        function spawnExplosion(pos, colorHex = 0xf59e0b, count = 12) {
+            const mat = getParticleMaterial(colorHex);
+            for (let i = 0; i < count; i++) {
+                // Si superamos el límite de partículas, reciclamos la más antigua
+                if (particles.length >= MAX_PARTICLES) {
+                    const oldest = particles.shift();
+                    scene.remove(oldest.mesh);
+                }
+                const mesh = new THREE.Mesh(particleGeo, mat);
+                mesh.position.copy(pos);
+                scene.add(mesh);
+                particles.push({
+                    mesh,
+                    vel: new THREE.Vector3(
+                        (Math.random() - 0.5) * 14,
+                        Math.random() * 10 + 2,
+                        (Math.random() - 0.5) * 14
+                    ),
+                    life: 0.55
+                });
+            }
+        }
+
+        /* ============================================================================
+         * 5. GENERADORES DE OBSTÁCULOS, VEHÍCULOS CON LUCES, MONEDAS Y CAJAS [?]
+         * ============================================================================ */
+        const obstacles = [];
+        const coins = [];
+        const mysteryBoxes = [];
+        const coffeePickups = [];
+        const specialPickups = []; // Letras O-B-R-A y Fichas de Engranaje ⚙️
+
+        // Materiales pre-creados para todos los obstáculos (0 fugas de memoria)
+        const wheelGeo = new THREE.CylinderGeometry(0.42, 0.42, 0.3, 10);
+        wheelGeo.rotateZ(Math.PI / 2);
+        const wheelMat = new THREE.MeshLambertMaterial({ color: 0x0f172a });
+        const darkGlassMat = new THREE.MeshLambertMaterial({ color: 0x1e293b });
+        const pickupMat = new THREE.MeshLambertMaterial({ color: 0x0284c7 });
+        const busMat = new THREE.MeshLambertMaterial({ color: 0xf59e0b });
+        const truckCabMat = new THREE.MeshLambertMaterial({ color: 0xdc2626 });
+        const truckCargoMat = new THREE.MeshLambertMaterial({ color: 0x64748b });
+        const carMats = [
+            new THREE.MeshLambertMaterial({ color: 0xef4444 }),
+            new THREE.MeshLambertMaterial({ color: 0x3b82f6 }),
+            new THREE.MeshLambertMaterial({ color: 0x10b981 }),
+            new THREE.MeshLambertMaterial({ color: 0xa855f7 }),
+            new THREE.MeshLambertMaterial({ color: 0xeab308 })
+        ];
+        const headlightOnMat = new THREE.MeshBasicMaterial({ color: 0xfef08a });
+        const headlightOffMat = new THREE.MeshBasicMaterial({ color: 0x64748b });
+        const sharedRampMat = new THREE.MeshLambertMaterial({ map: rampTexture });
+        const sharedStripeMat = new THREE.MeshLambertMaterial({ map: stripeTexture });
+        const sharedConeMat = new THREE.MeshLambertMaterial({ color: 0xf97316 });
+        const sharedHoleMat = new THREE.MeshBasicMaterial({ color: 0x090d16 });
+        const sharedRimMat = new THREE.MeshBasicMaterial({ color: 0x78350f, side: THREE.DoubleSide });
+        const sharedPottyBlueMat = new THREE.MeshLambertMaterial({ color: 0x0284c7 });
+        const sharedPottyRoofMat = new THREE.MeshLambertMaterial({ color: 0xf8fafc });
+        const sharedPottyDoorMat = new THREE.MeshLambertMaterial({ color: 0x0369a1 });
+        const sharedCoffeeBodyMat = new THREE.MeshLambertMaterial({ color: 0xdc2626 });
+        const sharedCoffeeCapMat = new THREE.MeshLambertMaterial({ color: 0xe2e8f0 });
+        const sharedCoffeeGlowMat = new THREE.MeshBasicMaterial({ color: 0xfef08a });
+        const sharedCementMat = new THREE.MeshLambertMaterial({ color: 0x78716c });
+        const sharedCementRimMat = new THREE.MeshLambertMaterial({ color: 0x57534e });
+        const sharedWaterJetMat = new THREE.MeshBasicMaterial({ color: 0x38bdf8, transparent: true, opacity: 0.82 });
+        const sharedCraneSteelMat = new THREE.MeshLambertMaterial({ color: 0xdc2626 });
+        const sharedCableMat = new THREE.MeshBasicMaterial({ color: 0x1e293b });
+        const sharedTokenMat = new THREE.MeshLambertMaterial({ color: 0x22d3ee, emissive: 0x0284c7, emissiveIntensity: 0.35 });
+        const letterMaterials = {
+            O: new THREE.MeshBasicMaterial({ map: letterTextures.O }),
+            B: new THREE.MeshBasicMaterial({ map: letterTextures.B }),
+            R: new THREE.MeshBasicMaterial({ map: letterTextures.R }),
+            A: new THREE.MeshBasicMaterial({ map: letterTextures.A })
+        };
+
+        // Crea un Charco de Cemento Fresco (Ralentiza y reduce el salto a la mitad durante 3.5s)
+        function createWetCementObstacle(laneIndex, zPos) {
+            const group = new THREE.Group();
+            group.position.set(LANES[laneIndex], 0.03, zPos);
+
+            const puddle = new THREE.Mesh(new THREE.CylinderGeometry(1.3, 1.35, 0.08, 12), sharedCementMat);
+            const border = new THREE.Mesh(new THREE.TorusGeometry(1.3, 0.12, 6, 12), sharedCementRimMat);
+            border.rotation.x = Math.PI / 2;
+            group.add(puddle, border);
+
+            scene.add(group);
+            obstacles.push({
+                type: 'wet_cement',
+                lane: laneIndex,
+                mesh: group,
+                width: 2.3,
+                height: 0.3,
+                length: 2.3,
+                triggered: false
+            });
+        }
+
+        // Crea una Alcantarilla Abierta con Géiser de Agua a Presión (¡Trampolín si saltas encima!)
+        function createWaterGeyserObstacle(laneIndex, zPos) {
+            const group = new THREE.Group();
+            group.position.set(LANES[laneIndex], 0, zPos);
+
+            const ring = new THREE.Mesh(new THREE.CylinderGeometry(0.95, 1.05, 0.16, 12), sharedCementRimMat);
+            ring.position.y = 0.08;
+            const waterColumn = new THREE.Mesh(new THREE.CylinderGeometry(0.45, 0.72, 3.6, 10), sharedWaterJetMat);
+            waterColumn.position.y = 1.8;
+            const foamTop = new THREE.Mesh(new THREE.SphereGeometry(0.68, 8, 8), sharedPottyRoofMat);
+            foamTop.position.y = 3.65;
+
+            group.add(ring, waterColumn, foamTop);
+            scene.add(group);
+
+            obstacles.push({
+                type: 'water_geyser',
+                lane: laneIndex,
+                mesh: group,
+                waterColumn,
+                foamTop,
+                width: 1.7,
+                height: 3.7,
+                length: 1.7,
+                bounced: false
+            });
+        }
+
+        // Crea una Viga de Grúa Oscilante en el Aire (Peligro aéreo al ir sobre camiones o con Jetpack)
+        function createSwingingBeamObstacle(zPos) {
+            const group = new THREE.Group();
+            group.position.set(0, 4.3, zPos);
+
+            const cable = new THREE.Mesh(new THREE.CylinderGeometry(0.06, 0.06, 8, 6), sharedCableMat);
+            cable.position.y = 4.0;
+            const steelBeam = new THREE.Mesh(new THREE.BoxGeometry(3.4, 0.75, 0.75), sharedCraneSteelMat);
+            group.add(cable, steelBeam);
+
+            scene.add(group);
+            obstacles.push({
+                type: 'swinging_beam',
+                lane: 1,
+                mesh: group,
+                phase: Math.random() * Math.PI * 2,
+                width: 3.2,
+                height: 0.85,
+                length: 0.85
+            });
+        }
+
+        // Crea una Ficha de Engranaje ⚙️ (para la Tragamonedas) o una Letra O-B-R-A
+        const letterGeo = new THREE.BoxGeometry(1.05, 1.05, 0.35);
+        const tokenGeo = new THREE.TorusGeometry(0.48, 0.16, 8, 12);
+
+        function spawnSpecialPickup(kind, letterChar, laneIndex, yPos, zPos) {
+            let mesh;
+            if (kind === 'letter') {
+                mesh = new THREE.Mesh(letterGeo, letterMaterials[letterChar]);
+            } else {
+                mesh = new THREE.Mesh(tokenGeo, sharedTokenMat);
+            }
+            mesh.position.set(LANES[laneIndex], yPos, zPos);
+            scene.add(mesh);
+            specialPickups.push({ kind, letterChar, lane: laneIndex, mesh });
+        }
+
+        // Crea Carros, Camionetas (Pickups), Autobuses o Camiones de Obra (con o sin rampa y movimiento)
+        function createVehicleObstacle(kind, laneIndex, zPos, isMoving = false, hasRamp = false) {
+            const group = new THREE.Group();
+            const xPos = LANES[laneIndex];
+            group.position.set(xPos, 0, zPos);
+
+            let width = 2.1;
+            let height = 1.65;
+            let length = 4.2;
+            let isHeavy = false;
+            const headlights = [];
+
+            if (kind === 'car') {
+                const bodyMat = carMats[Math.floor(Math.random() * carMats.length)];
+                const chassis = new THREE.Mesh(new THREE.BoxGeometry(2.05, 0.8, 4.0), bodyMat);
+                chassis.position.y = 0.65;
+                const cabin = new THREE.Mesh(new THREE.BoxGeometry(1.75, 0.7, 2.1), darkGlassMat);
+                cabin.position.set(0, 1.35, -0.2);
+                group.add(chassis, cabin);
+                height = 1.65;
+                length = 4.0;
+            } else if (kind === 'pickup') {
+                const chassis = new THREE.Mesh(new THREE.BoxGeometry(2.15, 0.9, 4.6), pickupMat);
+                chassis.position.y = 0.75;
+                const cab = new THREE.Mesh(new THREE.BoxGeometry(1.95, 0.85, 1.8), pickupMat);
+                cab.position.set(0, 1.55, 0.9);
+                const glass = new THREE.Mesh(new THREE.BoxGeometry(2.0, 0.6, 1.2), darkGlassMat);
+                glass.position.set(0, 1.58, 1.0);
+                group.add(chassis, cab, glass);
+                height = 1.9;
+                length = 4.6;
+            } else if (kind === 'bus' || kind === 'truck') {
+                isHeavy = true;
+                width = 2.45;
+                height = 3.25;
+                length = 9.6;
+
+                if (kind === 'bus') {
+                    const body = new THREE.Mesh(new THREE.BoxGeometry(width, 2.85, length), busMat);
+                    body.position.y = 1.75;
+                    const windows = new THREE.Mesh(new THREE.BoxGeometry(width + 0.06, 0.9, length - 0.8), darkGlassMat);
+                    windows.position.y = 2.25;
+                    group.add(body, windows);
+                } else {
+                    const cab = new THREE.Mesh(new THREE.BoxGeometry(width, 2.6, 2.6), truckCabMat);
+                    cab.position.set(0, 1.6, length / 2 - 1.3);
+                    const cargo = new THREE.Mesh(new THREE.BoxGeometry(width, 2.95, length - 2.8), truckCargoMat);
+                    cargo.position.set(0, 1.78, -1.3);
+                    group.add(cab, cargo);
+                }
+            }
+
+            // Ruedas
+            const wheelZ = length * 0.33;
+            [[-width / 2, wheelZ], [width / 2, wheelZ], [-width / 2, -wheelZ], [width / 2, -wheelZ]].forEach(([wx, wz]) => {
+                const w = new THREE.Mesh(wheelGeo, wheelMat);
+                w.position.set(wx, 0.42, wz);
+                group.add(w);
+            });
+
+            // Faros delanteros (mirando hacia el jugador en +Z)
+            const initialLightMat = isMoving ? headlightOnMat : headlightOffMat;
+            const headL = new THREE.Mesh(new THREE.BoxGeometry(0.42, 0.28, 0.12), initialLightMat);
+            headL.position.set(-width * 0.32, 0.85, length / 2 + 0.05);
+            const headR = new THREE.Mesh(new THREE.BoxGeometry(0.42, 0.28, 0.12), initialLightMat);
+            headR.position.set(width * 0.32, 0.85, length / 2 + 0.05);
+            group.add(headL, headR);
+            headlights.push(headL, headR);
+
+            // Rampa de madera de construcción acoplada frente al autobús/camión estacionado
+            let rampLength = 0;
+            if (hasRamp && isHeavy && !isMoving) {
+                rampLength = 5.4;
+                const slopeLen = Math.hypot(rampLength, height);
+                const rampBoard = new THREE.Mesh(new THREE.BoxGeometry(width - 0.1, 0.22, slopeLen), sharedRampMat);
+                rampBoard.position.set(0, height / 2, length / 2 + rampLength / 2);
+                rampBoard.rotation.x = Math.atan2(height, rampLength);
+                group.add(rampBoard);
+            }
+
+            scene.add(group);
+            obstacles.push({
+                type: 'vehicle',
+                kind,
+                isHeavy,
+                isMoving,
+                hasRamp,
+                rampLength,
+                honked: false,
+                lane: laneIndex,
+                mesh: group,
+                width,
+                height,
+                length,
+                headlights
+            });
+        }
+
+        // Crea un Bache en Construcción (provoca tropiezo si lo pisas)
+        function createPotholeObstacle(laneIndex, zPos) {
+            const group = new THREE.Group();
+            group.position.set(LANES[laneIndex], 0.02, zPos);
+
+            const hole = new THREE.Mesh(new THREE.CylinderGeometry(1.15, 1.15, 0.08, 12), sharedHoleMat);
+            group.add(hole);
+
+            const rim = new THREE.Mesh(new THREE.RingGeometry(1.1, 1.4, 12), sharedRimMat);
+            rim.rotation.x = -Math.PI / 2;
+            rim.position.y = 0.04;
+            group.add(rim);
+
+            const coneGeo = new THREE.ConeGeometry(0.22, 0.65, 8);
+            const c1 = new THREE.Mesh(coneGeo, sharedConeMat);
+            c1.position.set(-1.1, 0.32, 0.8);
+            const c2 = new THREE.Mesh(coneGeo, sharedConeMat);
+            c2.position.set(1.1, 0.32, 0.8);
+            group.add(c1, c2);
+
+            scene.add(group);
+            obstacles.push({
+                type: 'pothole',
+                lane: laneIndex,
+                mesh: group,
+                width: 2.1,
+                height: 0.45,
+                length: 2.1,
+                triggered: false
+            });
+        }
+
+        // Crea una Barrera Alta de Construcción (requiere deslizar hacia abajo para rodar)
+        function createHighBarrierObstacle(laneIndex, zPos) {
+            const group = new THREE.Group();
+            group.position.set(LANES[laneIndex], 0, zPos);
+
+            const postGeo = new THREE.CylinderGeometry(0.1, 0.1, 2.7, 8);
+            const postL = new THREE.Mesh(postGeo, sharedConeMat);
+            postL.position.set(-1.15, 1.35, 0);
+            const postR = postL.clone();
+            postR.position.x = 1.15;
+
+            const board = new THREE.Mesh(new THREE.BoxGeometry(2.55, 0.9, 0.25), sharedStripeMat);
+            board.position.set(0, 2.1, 0);
+
+            group.add(postL, postR, board);
+            scene.add(group);
+
+            obstacles.push({
+                type: 'barrier_high',
+                lane: laneIndex,
+                mesh: group,
+                width: 2.4,
+                height: 2.6,
+                bottomClearance: 1.45,
+                length: 0.7
+            });
+        }
+
+        // Crea un Baño Portátil Azul de Obra (Porta-Potty): ¡Si saltas sobre él o lo chocas con escudo da +15 monedas!
+        function createPortaPottyObstacle(laneIndex, zPos) {
+            const group = new THREE.Group();
+            group.position.set(LANES[laneIndex], 0, zPos);
+
+            const cabin = new THREE.Mesh(new THREE.BoxGeometry(1.55, 2.35, 1.55), sharedPottyBlueMat);
+            cabin.position.y = 1.18;
+            const roof = new THREE.Mesh(new THREE.BoxGeometry(1.68, 0.25, 1.68), sharedPottyRoofMat);
+            roof.position.y = 2.45;
+            const door = new THREE.Mesh(new THREE.BoxGeometry(1.1, 1.95, 0.08), sharedPottyDoorMat);
+            door.position.set(0, 1.12, 0.78);
+
+            group.add(cabin, roof, door);
+            scene.add(group);
+
+            obstacles.push({
+                type: 'porta_potty',
+                lane: laneIndex,
+                mesh: group,
+                width: 1.6,
+                height: 2.5,
+                length: 1.6,
+                smashed: false
+            });
+        }
+
+        // Crea un Termo de Café Caliente (Turbo de Cafeína de 3.5s)
+        function spawnCoffeeThermos(laneIndex, yPos, zPos) {
+            const group = new THREE.Group();
+            group.position.set(LANES[laneIndex], yPos, zPos);
+
+            const body = new THREE.Mesh(new THREE.CylinderGeometry(0.34, 0.34, 0.9, 10), sharedCoffeeBodyMat);
+            const cap = new THREE.Mesh(new THREE.CylinderGeometry(0.36, 0.36, 0.24, 10), sharedCoffeeCapMat);
+            cap.position.y = 0.52;
+            const glowRing = new THREE.Mesh(new THREE.TorusGeometry(0.55, 0.05, 8, 12), sharedCoffeeGlowMat);
+            glowRing.rotation.x = Math.PI / 2;
+            group.add(body, cap, glowRing);
+
+            scene.add(group);
+            coffeePickups.push({ mesh: group, lane: laneIndex });
+        }
+
+        // Crea una Moneda Amarilla
+        const coinGeo = new THREE.CylinderGeometry(0.52, 0.52, 0.16, 14);
+        coinGeo.rotateX(Math.PI / 2);
+
+        function spawnCoin(laneIndex, yPos, zPos) {
+            const mesh = new THREE.Mesh(coinGeo, matCoin);
+            mesh.position.set(LANES[laneIndex], yPos, zPos);
+            scene.add(mesh);
+            coins.push({ mesh, lane: laneIndex, collected: false });
+        }
+
+        // Crea la Caja Multicolor con signo '?'
+        const boxGeo = new THREE.BoxGeometry(1.25, 1.25, 1.25);
+        const boxMat = new THREE.MeshBasicMaterial({ map: mysteryBoxTexture });
+
+        function spawnMysteryBox(laneIndex, yPos, zPos) {
+            const mesh = new THREE.Mesh(boxGeo, boxMat);
+            mesh.position.set(LANES[laneIndex], yPos, zPos);
+            scene.add(mesh);
+            mysteryBoxes.push({ mesh, collected: false });
+        }
+
+        /* ============================================================================
+         * 6. GENERADOR PROCEDURAL DE PATRONES DE LA CALLE
+         * ============================================================================ */
+        let nextSpawnZ = -35;
+
+        function spawnWavePattern(zStart) {
+            const lanes = [0, 1, 2];
+            // Elegir un carril principal seguro o con rampa
+            const patternRoll = Math.random();
+            let usedRampLane = -1;
+
+            if (patternRoll < 0.32) {
+                // PATRÓN 1: Autobús o Camión con Rampa de Madera + Tráfico en otros carriles
+                const rampLane = Math.floor(Math.random() * 3);
+                usedRampLane = rampLane;
+                const heavyType = Math.random() < 0.5 ? 'bus' : 'truck';
+                createVehicleObstacle(heavyType, rampLane, zStart, false, true);
+
+                // Monedas subiendo por la rampa y sobre el techo del camión
+                for (let i = 0; i < 6; i++) {
+                    const cz = zStart + 6.5 - i * 2.2;
+                    const cy = i < 2 ? 1.2 + i * 1.1 : 3.9;
+                    spawnCoin(rampLane, cy, cz);
+                }
+
+                // Ocasionalmente ponemos una Viga de Grúa Oscilante en lo alto para esquivar sobre los techos
+                if (Math.random() < 0.45) {
+                    createSwingingBeamObstacle(zStart - 2.5);
+                }
+
+                // En los otros dos carriles ponemos bache, cemento fresco, carro o barrera
+                lanes.filter(l => l !== rampLane).forEach(otherLane => {
+                    const r = Math.random();
+                    if (r < 0.35) {
+                        createPotholeObstacle(otherLane, zStart + 2);
+                        spawnCoin(otherLane, 2.2, zStart + 2);
+                    } else if (r < 0.65) {
+                        createWetCementObstacle(otherLane, zStart + 1.5);
+                    } else if (r < 0.85) {
+                        createVehicleObstacle('car', otherLane, zStart, Math.random() < 0.45, false);
+                    } else {
+                        createHighBarrierObstacle(otherLane, zStart + 1);
+                    }
+                });
+            } else if (patternRoll < 0.65) {
+                // PATRÓN 2: Vehículo en movimiento con luces y claxon + Géiser de Agua o Baches
+                const movingLane = Math.floor(Math.random() * 3);
+                const movingKind = ['car', 'pickup', 'bus', 'truck'][Math.floor(Math.random() * 4)];
+                createVehicleObstacle(movingKind, movingLane, zStart - 6, true, false);
+
+                lanes.filter(l => l !== movingLane).forEach((lane, idx) => {
+                    if (idx === 0) {
+                        if (Math.random() < 0.5) {
+                            // Alcantarilla con Géiser Trampolín + Monedas altas en el aire
+                            createWaterGeyserObstacle(lane, zStart);
+                            for (let h = 1; h <= 4; h++) {
+                                spawnCoin(lane, 3.2 + h * 0.9, zStart - h * 2.0);
+                            }
+                        } else {
+                            createPotholeObstacle(lane, zStart);
+                            spawnCoin(lane, 1.1, zStart + 2.8);
+                            spawnCoin(lane, 2.5, zStart);
+                            spawnCoin(lane, 1.1, zStart - 2.8);
+                        }
+                    } else {
+                        if (Math.random() < 0.55) {
+                            createHighBarrierObstacle(lane, zStart - 1);
+                            for (let c = -1; c <= 1; c++) spawnCoin(lane, 0.75, zStart - 1 + c * 2.0);
+                        } else {
+                            createVehicleObstacle('pickup', lane, zStart, false, false);
+                        }
+                    }
+                });
+            } else {
+                // PATRÓN 3: Obra intensa (Cemento fresco + Baches + Carros estacionados + fila de monedas)
+                const coinLane = Math.floor(Math.random() * 3);
+                for (let i = 0; i < 5; i++) {
+                    spawnCoin(coinLane, 1.0, zStart + 4 - i * 2.2);
+                }
+                if (Math.random() < 0.5) {
+                    createWetCementObstacle(coinLane, zStart);
+                } else {
+                    createPotholeObstacle(coinLane, zStart);
+                }
+
+                lanes.filter(l => l !== coinLane).forEach(lane => {
+                    const kind = Math.random() < 0.5 ? 'car' : 'bus';
+                    createVehicleObstacle(kind, lane, zStart, Math.random() < 0.3, false);
+                });
+            }
+
+            // Carriles libres de rampa para evitar que baños portátiles u objetos tapen la subida
+            const safeExtraLanes = lanes.filter(l => l !== usedRampLane);
+            const getSafeLane = () => safeExtraLanes[Math.floor(Math.random() * safeExtraLanes.length)];
+
+            // Probabilidad de aparecer Caja Multicolor '?' de Potenciador, Termos, Baños, Letras O-B-R-A o Fichas ⚙️
+            if (Math.random() < 0.34) {
+                const boxLane = getSafeLane();
+                spawnMysteryBox(boxLane, 1.35, zStart + 10.5);
+            } else if (Math.random() < 0.45) {
+                const extraLane = getSafeLane();
+                if (Math.random() < 0.5) {
+                    spawnCoffeeThermos(extraLane, 1.25, zStart + 10.5);
+                } else {
+                    createPortaPottyObstacle(extraLane, zStart + 11.0);
+                }
+            } else if (Math.random() < 0.55) {
+                // Generar una Ficha de Engranaje ⚙️ o la siguiente letra faltante de O-B-R-A
+                // Si sale en el carril de rampa, la ponemos en el techo del camión (altura 4.2)
+                const pickLane = Math.floor(Math.random() * 3);
+                const pickY = (pickLane === usedRampLane) ? 4.2 : 1.5;
+                const pickZ = (pickLane === usedRampLane) ? zStart : zStart + 10.5;
+                const missingLetters = ['O', 'B', 'R', 'A'].filter(l => !state.collectedLetters[l]);
+                if (missingLetters.length > 0 && Math.random() < 0.55) {
+                    spawnSpecialPickup('letter', missingLetters[0], pickLane, pickY, pickZ);
+                } else {
+                    spawnSpecialPickup('token', null, pickLane, pickY, pickZ);
+                }
+            }
+        }
+
+        /* ============================================================================
+         * 7. ESTADO DEL JUEGO, TIENDA DEL SINDICATO, CICLO DÍA/NOCHE Y MISIONES
+         * ============================================================================ */
+        // Cargar progreso guardado del Sindicato
+        let savedShop = {
+            bankCoins: 0,
+            powerupLevel: 0, // Cada nivel añade +2s a la caja [?] (máx nivel 3 = 18s)
+            hardhatLevel: 0, // Cada nivel reduce -3s la recarga del casco (máx nivel 3 = 9s)
+            unlockedSkins: ['clasico'],
+            equippedSkin: 'clasico'
+        };
+        try {
+            const rawShop = localStorage.getItem('obrero_shop_v1');
+            if (rawShop) {
+                savedShop = Object.assign(savedShop, JSON.parse(rawShop));
+            }
+        } catch (e) {}
+
+        function saveShopData() {
+            try {
+                localStorage.setItem('obrero_shop_v1', JSON.stringify(savedShop));
+            } catch (e) {}
+            updateBankUI();
+        }
+
+        function getPowerupMaxDuration() {
+            return 12.0 + savedShop.powerupLevel * 2.0; // 12s -> 14s -> 16s -> 18s
+        }
+
+        function getHardhatMaxCooldown() {
+            return Math.max(9.0, 18.0 - savedShop.hardhatLevel * 3.0); // 18s -> 15s -> 12s -> 9s
+        }
+
+        const state = {
+            playing: false,
+            distance: 0,
+            coins: 0,
+            highScore: parseInt(localStorage.getItem('obrero_highscore') || '0', 10),
+            speed: 22,
+            baseSpeed: 22,
+            lane: 1, // 0: Izquierda, 1: Centro, 2: Derecha
+            x: 0,
+            y: 0,
+            vy: 0,
+            groundY: 0,
+            isRolling: false,
+            rollTimer: 0,
+            // Policía y tropiezos en baches
+            policeChasingTimer: 0,
+            policeZOffset: 5.5,
+            invulnerableTimer: 0,
+            cameraShake: 0,
+            // Potenciador Activo (Duración mejorable + Escudo de 1 golpe)
+            activePowerup: null,
+            powerupTimeLeft: 0,
+            // Fiebre de Cafeína, Casco Dorado, Cemento Fresco y Combo Esquive
+            coffeeBoostTimer: 0,
+            wetCementTimer: 0,
+            hardHatShield: false,
+            hardHatCooldown: 0,
+            nearMissCombo: 0,
+            nearMissTimer: 0,
+            // Letras O-B-R-A, Fichas ⚙️ y Misiones con Multiplicador de Rango
+            gearTokens: 1, // Empiezas con 1 ficha de regalo para probar la Tragamonedas
+            collectedLetters: { O: false, B: false, R: false, A: false },
+            rankMultiplier: 1,
+            missionIndex: 0,
+            missionProgress: 0,
+            timePhase: 'day' // 'day', 'sunset', 'night'
+        };
+
+        // Configuración de colores para el Ciclo Día -> Atardecer -> Turno Nocturno
+        const TIME_PALETTES = {
+            day: {
+                sky: new THREE.Color(0x38bdf8),
+                hemiSky: new THREE.Color(0xffffff),
+                hemiGround: new THREE.Color(0x334155),
+                dirLight: new THREE.Color(0xfffbeb),
+                dirIntensity: 0.85,
+                lampColor: 0x64748b,
+                winColor: 0x334155,
+                icon: '☀️',
+                label: 'DÍA'
+            },
+            sunset: {
+                sky: new THREE.Color(0xf97316),
+                hemiSky: new THREE.Color(0xfed7aa),
+                hemiGround: new THREE.Color(0x431407),
+                dirLight: new THREE.Color(0xfde047),
+                dirIntensity: 0.72,
+                lampColor: 0xfef08a,
+                winColor: 0xfde68a,
+                icon: '🌅',
+                label: 'ATARDECER'
+            },
+            night: {
+                sky: new THREE.Color(0x090d16),
+                hemiSky: new THREE.Color(0x38bdf8),
+                hemiGround: new THREE.Color(0x020617),
+                dirLight: new THREE.Color(0x93c5fd),
+                dirIntensity: 0.45,
+                lampColor: 0xfacc15,
+                winColor: 0xfef08a,
+                icon: '🌙',
+                label: 'NOCHE'
+            }
+        };
+
+        function applySkinToWorker() {
+            const skin = WORKER_SKINS.find(s => s.id === savedShop.equippedSkin) || WORKER_SKINS[0];
+            worker.vestMat.color.setHex(skin.vestColor);
+            worker.shirtMat.color.setHex(skin.shirtColor);
+            worker.pantsMat.color.setHex(skin.pantsColor);
+            if (!state.hardHatShield) {
+                worker.helmetMat.color.setHex(skin.helmetColor);
+            }
+            if (skin.visorColor) {
+                worker.visorMesh.visible = true;
+                worker.visorMat.color.setHex(skin.visorColor);
+            } else {
+                worker.visorMesh.visible = false;
+            }
+        }
+        applySkinToWorker();
+
+        const MISSIONS_POOL = [
+            { type: 'potty', target: 2, text: 'Demuele 2 baños portátiles 🚽' },
+            { type: 'nearmiss', target: 3, text: 'Haz 3 esquives al límite ⚡' },
+            { type: 'geyser', target: 2, text: 'Salta en 2 géiseres de agua ⛲' },
+            { type: 'powerup', target: 2, text: 'Abre 2 cajas misteriosas [?]' },
+            { type: 'coins', target: 40, text: 'Recoge 40 monedas en obra 💰' }
+        ];
+
+        // Referencias DOM
+        const hudEl = document.getElementById('hud');
+        const touchHintEl = document.getElementById('touch-hint');
+        const scoreEl = document.getElementById('hud-score');
+        const coinsEl = document.getElementById('hud-coins');
+        const policeWarningEl = document.getElementById('police-warning');
+        const cementWarningEl = document.getElementById('cement-warning');
+        const sirenBorderEl = document.getElementById('siren-border');
+        const powerupHudEl = document.getElementById('powerup-hud');
+        const powerupNameEl = document.getElementById('powerup-name');
+        const powerupIconEl = document.getElementById('powerup-icon');
+        const powerupTimerTextEl = document.getElementById('powerup-timer-text');
+        const powerupBarEl = document.getElementById('powerup-bar');
+        const toastEl = document.getElementById('floating-toast');
+        const toastBoxEl = document.getElementById('toast-box');
+        const btnHardhatEl = document.getElementById('btn-hardhat');
+        const nearMissBadgeEl = document.getElementById('near-miss-badge');
+        const nearMissCountEl = document.getElementById('near-miss-count');
+        const hudTokensEl = document.getElementById('hud-tokens');
+        const hudMultiplierEl = document.getElementById('hud-multiplier');
+        const hudMissionTextEl = document.getElementById('hud-mission-text');
+        const hudMissionProgEl = document.getElementById('hud-mission-prog');
+        const hudTimeIconEl = document.getElementById('hud-time-icon');
+        const hudTimeTextEl = document.getElementById('hud-time-text');
+
+        function updateBankUI() {
+            const bStart = document.getElementById('menu-bank-coins');
+            const bShop = document.getElementById('shop-bank-coins');
+            const bOver = document.getElementById('over-bank-coins');
+            if (bStart) bStart.textContent = savedShop.bankCoins;
+            if (bShop) bShop.textContent = savedShop.bankCoins;
+            if (bOver) bOver.textContent = savedShop.bankCoins;
+        }
+        updateBankUI();
+
+        function renderShopModal() {
+            updateBankUI();
+            const pDur = getPowerupMaxDuration();
+            const pCost = (savedShop.powerupLevel + 1) * 150;
+            const pBtn = document.getElementById('btn-buy-powerup');
+            document.getElementById('upg-powerup-desc').innerHTML = `Duración actual: <b class="text-amber-300">${pDur}s</b> (Nv. ${savedShop.powerupLevel}/3)`;
+            if (savedShop.powerupLevel >= 3) {
+                pBtn.textContent = 'MÁXIMO (18s)';
+                pBtn.disabled = true;
+                pBtn.className = 'bg-slate-700 text-slate-400 font-black px-3 py-2 rounded-xl text-xs shrink-0 cursor-not-allowed';
+            } else {
+                pBtn.textContent = `+2s (${pCost} $)`;
+                pBtn.disabled = false;
+                pBtn.className = 'bg-amber-500 hover:bg-amber-400 active:scale-95 text-slate-950 font-black px-3 py-2 rounded-xl text-xs shadow cursor-pointer transition shrink-0';
+            }
+
+            const hCool = getHardhatMaxCooldown();
+            const hCost = (savedShop.hardhatLevel + 1) * 150;
+            const hBtn = document.getElementById('btn-buy-hardhat');
+            document.getElementById('upg-hardhat-desc').innerHTML = `Enfriamiento: <b class="text-amber-300">${hCool}s</b> (Nv. ${savedShop.hardhatLevel}/3)`;
+            if (savedShop.hardhatLevel >= 3) {
+                hBtn.textContent = 'MÁXIMO (9s)';
+                hBtn.disabled = true;
+                hBtn.className = 'bg-slate-700 text-slate-400 font-black px-3 py-2 rounded-xl text-xs shrink-0 cursor-not-allowed';
+            } else {
+                hBtn.textContent = `-3s (${hCost} $)`;
+                hBtn.disabled = false;
+                hBtn.className = 'bg-amber-500 hover:bg-amber-400 active:scale-95 text-slate-950 font-black px-3 py-2 rounded-xl text-xs shadow cursor-pointer transition shrink-0';
+            }
+
+            const skinsContainer = document.getElementById('skins-container');
+            skinsContainer.innerHTML = '';
+            WORKER_SKINS.forEach(skin => {
+                const isUnlocked = savedShop.unlockedSkins.includes(skin.id);
+                const isEquipped = savedShop.equippedSkin === skin.id;
+                const card = document.createElement('div');
+                card.className = `p-2.5 rounded-2xl border ${isEquipped ? 'bg-slate-800 border-emerald-400' : 'bg-slate-900/90 border-slate-700'} flex flex-col justify-between gap-2`;
+                card.innerHTML = `
+                    <div>
+                        <div class="font-extrabold text-xs text-white flex items-center justify-between">
+                            <span>${skin.name}</span>
+                            ${isEquipped ? '<span class="text-[10px] bg-emerald-500/20 text-emerald-300 px-1.5 py-0.5 rounded">ACTIVO</span>' : ''}
+                        </div>
+                        <div class="text-[10px] text-slate-400 mt-0.5">${skin.desc}</div>
+                    </div>
+                `;
+                const btn = document.createElement('button');
+                if (isEquipped) {
+                    btn.className = 'w-full py-1.5 rounded-xl bg-emerald-600/40 text-emerald-200 font-black text-xs cursor-default';
+                    btn.textContent = '✓ EQUIPADO';
+                } else if (isUnlocked) {
+                    btn.className = 'w-full py-1.5 rounded-xl bg-cyan-500 hover:bg-cyan-400 text-slate-950 font-black text-xs cursor-pointer transition';
+                    btn.textContent = 'EQUIPAR';
+                    btn.onclick = () => {
+                        sfx.init();
+                        sfx.playCoin();
+                        savedShop.equippedSkin = skin.id;
+                        saveShopData();
+                        applySkinToWorker();
+                        renderShopModal();
+                    };
+                } else {
+                    btn.className = 'w-full py-1.5 rounded-xl bg-amber-500 hover:bg-amber-400 text-slate-950 font-black text-xs cursor-pointer transition';
+                    btn.textContent = `COMPRAR (${skin.cost} $)`;
+                    btn.onclick = () => {
+                        sfx.init();
+                        const fb = document.getElementById('shop-feedback');
+                        if (savedShop.bankCoins >= skin.cost) {
+                            savedShop.bankCoins -= skin.cost;
+                            savedShop.unlockedSkins.push(skin.id);
+                            savedShop.equippedSkin = skin.id;
+                            sfx.playPowerupBox();
+                            saveShopData();
+                            applySkinToWorker();
+                            renderShopModal();
+                            fb.textContent = `🎉 ¡Uniforme "${skin.name}" desbloqueado y equipado!`;
+                        } else {
+                            sfx.playRoll();
+                            fb.textContent = `⚠️ Necesitas ${skin.cost - savedShop.bankCoins} $ más para comprar este uniforme.`;
+                        }
+                    };
+                }
+                card.appendChild(btn);
+                skinsContainer.appendChild(card);
+            });
+        }
+
+        function updateMissionsAndLettersUI() {
+            const currentM = MISSIONS_POOL[state.missionIndex % MISSIONS_POOL.length];
+            hudMissionTextEl.textContent = currentM.text;
+            hudMissionProgEl.textContent = `${state.missionProgress}/${currentM.target}`;
+            hudMultiplierEl.textContent = `x${state.rankMultiplier}`;
+            hudTokensEl.textContent = state.gearTokens;
+
+            ['O', 'B', 'R', 'A'].forEach(l => {
+                const el = document.getElementById(`letter-${l}`);
+                if (state.collectedLetters[l]) {
+                    el.className = 'w-5 h-5 rounded bg-amber-400 border border-yellow-200 text-slate-950 font-black text-xs flex items-center justify-center shadow';
+                } else {
+                    el.className = 'w-5 h-5 rounded bg-slate-800 border border-slate-600 text-slate-500 font-black text-xs flex items-center justify-center';
+                }
+            });
+        }
+
+        function advanceMission(type, amount = 1) {
+            const currentM = MISSIONS_POOL[state.missionIndex % MISSIONS_POOL.length];
+            if (currentM.type !== type) return;
+            state.missionProgress += amount;
+            if (state.missionProgress >= currentM.target) {
+                state.missionProgress = 0;
+                state.missionIndex++;
+                state.rankMultiplier = Math.min(8, state.rankMultiplier + 1);
+                state.coins += 25;
+                sfx.playPowerupBox();
+                showToast(`🎖️ ¡MISIÓN CUMPLIDA! RANGO x${state.rankMultiplier} (+25$)`, 'bg-emerald-500');
+            }
+            updateMissionsAndLettersUI();
+        }
+
+        let toastTimeout = null;
+        function showToast(text, bgClass = 'bg-amber-500') {
+            if (toastTimeout) clearTimeout(toastTimeout);
+            toastBoxEl.className = `px-5 py-2 rounded-2xl font-extrabold text-lg md:text-2xl text-white arcade-text shadow-xl border-2 border-white/50 ${bgClass}`;
+            toastBoxEl.textContent = text;
+            toastEl.classList.remove('hidden');
+            toastTimeout = setTimeout(() => {
+                toastEl.classList.add('hidden');
+            }, 1700);
+        }
+
+        // Activar Potenciador de Caja '?'
+        function activateRandomPowerup() {
+            sfx.playPowerupBox();
+            advanceMission('powerup', 1);
+            const chosen = POWERUP_TYPES[Math.floor(Math.random() * POWERUP_TYPES.length)];
+            state.activePowerup = chosen;
+            state.powerupTimeLeft = getPowerupMaxDuration();
+            state.isRolling = false;
+            state.wetCementTimer = 0;
+
+            // Si el policía venía cerca, el potenciador nos da impulso y lo aleja
+            state.policeChasingTimer = 0;
+
+            updatePowerupVisuals();
+            showToast(`${chosen.icon} ¡${chosen.name}!`, 'rainbow-badge');
+
+            if (chosen.id === 'pogo') {
+                state.vy = POGO_VELOCITY;
+                sfx.playJump(true);
+            } else if (chosen.id === 'jetpack') {
+                // Generar hileras densas de monedas en el aire durante el vuelo
+                for (let z = -15; z > -150; z -= 4.5) {
+                    const airLane = Math.floor(Math.random() * 3);
+                    spawnCoin(airLane, 6.8, z);
+                }
+            }
+        }
+
+        function updatePowerupVisuals() {
+            const p = state.activePowerup;
+            worker.pogoGroup.visible = !!(p && p.id === 'pogo');
+            worker.dozerGroup.visible = !!(p && p.id === 'bulldozer');
+            worker.jetpackGroup.visible = !!(p && p.id === 'jetpack');
+            worker.magnetGroup.visible = !!(p && p.id === 'magnet_mech');
+            worker.shieldMesh.visible = !!(p || state.hardHatShield || state.coffeeBoostTimer > 0);
+
+            // Color del casco: Dorado brillante si el Casco Protector está activo, o el color del traje equipado
+            const skin = WORKER_SKINS.find(s => s.id === savedShop.equippedSkin) || WORKER_SKINS[0];
+            worker.helmetMat.color.setHex(state.hardHatShield ? 0xfef08a : skin.helmetColor);
+            worker.helmetMat.emissive.setHex(state.hardHatShield ? 0xd97706 : 0x000000);
+
+            if (p) {
+                powerupHudEl.classList.remove('hidden');
+                powerupNameEl.textContent = p.name;
+                powerupIconEl.textContent = p.icon;
+            } else {
+                powerupHudEl.classList.add('hidden');
+            }
+        }
+
+        // Activar Casco Dorado Protector (estilo Hoverboard con Doble Toque o tecla E)
+        function activateGoldenHardHat() {
+            if (!state.playing || state.hardHatShield || state.hardHatCooldown > 0) return;
+            state.hardHatShield = true;
+            state.hardHatCooldown = getHardhatMaxCooldown();
+            sfx.playPowerupBox();
+            updatePowerupVisuals();
+            showToast('⛑️ ¡CASCO DORADO ACTIVO! (1 GOLPE)', 'bg-amber-500');
+        }
+
+        // Romper el escudo del potenciador o Casco Dorado cuando chocas contra un obstáculo
+        function breakPowerupShield(obstacleMesh) {
+            sfx.playCrash(true);
+            spawnExplosion(worker.root.position.clone().add(new THREE.Vector3(0, 1.5, 0)), 0x38bdf8, 26);
+            if (obstacleMesh) {
+                spawnExplosion(obstacleMesh.position.clone().add(new THREE.Vector3(0, 1.5, 0)), 0xf97316, 18);
+            }
+            state.activePowerup = null;
+            state.powerupTimeLeft = 0;
+            state.hardHatShield = false;
+            state.invulnerableTimer = 1.8; // Breve invulnerabilidad tras perder el vehículo o casco
+            state.cameraShake = 0.45;
+            updatePowerupVisuals();
+            showToast('🛡️ ¡ESCUDO SALVAVIDAS! SIGUES CORRIENDO', 'bg-cyan-600');
+        }
+
+        // Acciones de movimiento por los 3 carriles + Detección de "Esquive al Límite" (Near Miss)
+        function moveLane(dir) {
+            if (!state.playing) return;
+            const oldLane = state.lane;
+            const target = Math.max(0, Math.min(2, state.lane + dir));
+            if (target !== oldLane) {
+                // Comprobar si acabamos de esquivar en el último segundo un vehículo en el carril anterior
+                obstacles.forEach(obs => {
+                    if (obs.lane === oldLane && !obs.nearMissed && obs.type === 'vehicle') {
+                        const distZ = obs.mesh.position.z;
+                        if (distZ > -14 && distZ < 2.5) {
+                            obs.nearMissed = true;
+                            state.nearMissCombo += 1;
+                            state.nearMissTimer = 4.0;
+                            const bonusCoins = 10 + state.nearMissCombo * 5;
+                            state.coins += bonusCoins;
+                            advanceMission('nearmiss', 1);
+                            sfx.playNearMiss();
+                            nearMissCountEl.textContent = state.nearMissCombo;
+                            nearMissBadgeEl.classList.remove('hidden');
+                            showToast(`⚡ ¡ESQUIVE AL LÍMITE! +${bonusCoins}$`, 'bg-emerald-600');
+                        }
+                    }
+                });
+                state.lane = target;
+            }
+        }
+
+        function triggerJump() {
+            if (!state.playing) return;
+            if (state.activePowerup && state.activePowerup.id === 'jetpack') return;
+
+            if (state.y <= state.groundY + 0.15) {
+                state.isRolling = false;
+                const isPogo = state.activePowerup && state.activePowerup.id === 'pogo';
+                const cementPenalty = state.wetCementTimer > 0 ? 0.62 : 1.0;
+                state.vy = (isPogo ? POGO_VELOCITY : JUMP_VELOCITY) * cementPenalty;
+                sfx.playJump(isPogo);
+            }
+        }
+
+        function triggerRoll() {
+            if (!state.playing) return;
+            if (state.activePowerup && state.activePowerup.id === 'jetpack') return;
+
+            sfx.playRoll();
+            state.isRolling = true;
+            state.rollTimer = 0.68;
+            if (state.y > state.groundY) {
+                state.vy = -26; // Caída rápida si ruedas en el aire
+            }
+        }
+
+        // Controles de Teclado (Flechas, WASD y Espacio/E para Casco Dorado)
+        window.addEventListener('keydown', (e) => {
+            if (!state.playing) return;
+            if (e.key === 'ArrowLeft' || e.key === 'a' || e.key === 'A') moveLane(-1);
+            else if (e.key === 'ArrowRight' || e.key === 'd' || e.key === 'D') moveLane(1);
+            else if (e.key === 'ArrowUp' || e.key === 'w' || e.key === 'W' || e.key === ' ') triggerJump();
+            else if (e.key === 'ArrowDown' || e.key === 's' || e.key === 'S') triggerRoll();
+            else if (e.key === 'e' || e.key === 'E' || e.key === 'Shift') activateGoldenHardHat();
+        });
+
+        // Controles Táctiles de Deslizamiento (Swipe) + Doble Toque para Casco Dorado
+        let touchStartX = 0;
+        let touchStartY = 0;
+        let touchHandled = false;
+        let lastTapTime = 0;
+
+        window.addEventListener('touchstart', (e) => {
+            if (!state.playing) return;
+            const t = e.touches[0];
+            touchStartX = t.clientX;
+            touchStartY = t.clientY;
+            touchHandled = false;
+
+            const nowTap = performance.now();
+            if (nowTap - lastTapTime < 280) {
+                activateGoldenHardHat();
+            }
+            lastTapTime = nowTap;
+        }, { passive: true });
+
+        window.addEventListener('touchmove', (e) => {
+            if (!state.playing || touchHandled) return;
+            const t = e.touches[0];
+            const dx = t.clientX - touchStartX;
+            const dy = t.clientY - touchStartY;
+            const threshold = 26;
+
+            if (Math.abs(dx) > threshold || Math.abs(dy) > threshold) {
+                if (Math.abs(dx) > Math.abs(dy)) {
+                    moveLane(dx > 0 ? 1 : -1);
+                } else {
+                    if (dy < 0) triggerJump();
+                    else triggerRoll();
+                }
+                touchHandled = true;
+            }
+        }, { passive: true });
+
+        /* ============================================================================
+         * 8. BUCLE PRINCIPAL DE ACTUALIZACIÓN Y COLISIONES
+         * ============================================================================ */
+        function resetWorld() {
+            obstacles.forEach(o => scene.remove(o.mesh));
+            obstacles.length = 0;
+            coins.forEach(c => scene.remove(c.mesh));
+            coins.length = 0;
+            mysteryBoxes.forEach(b => scene.remove(b.mesh));
+            mysteryBoxes.length = 0;
+            coffeePickups.forEach(cf => scene.remove(cf.mesh));
+            coffeePickups.length = 0;
+            specialPickups.forEach(sp => scene.remove(sp.mesh));
+            specialPickups.length = 0;
+
+            state.distance = 0;
+            state.coins = 0;
+            state.speed = 22;
+            state.baseSpeed = 22;
+            state.lane = 1;
+            state.x = 0;
+            state.y = 0,
+            state.vy = 0;
+            state.groundY = 0;
+            state.isRolling = false;
+            state.rollTimer = 0;
+            state.policeChasingTimer = 0;
+            state.policeZOffset = 4.2;
+            state.invulnerableTimer = 0;
+            state.cameraShake = 0;
+            state.activePowerup = null;
+            state.powerupTimeLeft = 0;
+            state.coffeeBoostTimer = 0;
+            state.wetCementTimer = 0;
+            state.hardHatShield = false;
+            state.hardHatCooldown = 0;
+            state.nearMissCombo = 0;
+            state.nearMissTimer = 0;
+            state.collectedLetters = { O: false, B: false, R: false, A: false };
+            state.timePhase = 'day';
+            scene.background.copy(TIME_PALETTES.day.sky);
+            scene.fog.color.copy(TIME_PALETTES.day.sky);
+            hemiLight.color.copy(TIME_PALETTES.day.hemiSky);
+            hemiLight.groundColor.copy(TIME_PALETTES.day.hemiGround);
+            dirLight.color.copy(TIME_PALETTES.day.dirLight);
+            dirLight.intensity = TIME_PALETTES.day.dirIntensity;
+            matLampBulb.color.setHex(TIME_PALETTES.day.lampColor);
+            matBuildingWindow.color.setHex(TIME_PALETTES.day.winColor);
+            hudTimeIconEl.textContent = TIME_PALETTES.day.icon;
+            hudTimeTextEl.textContent = TIME_PALETTES.day.label;
+
+            nearMissBadgeEl.classList.add('hidden');
+            cementWarningEl.classList.add('hidden');
+            applySkinToWorker();
+            updatePowerupVisuals();
+            updateMissionsAndLettersUI();
+
+            nextSpawnZ = -32;
+            for (let i = 0; i < 6; i++) {
+                spawnWavePattern(nextSpawnZ);
+                nextSpawnZ -= 26;
+            }
+        }
+
+        function triggerGameOver(reasonText) {
+            state.playing = false;
+            sfx.playCrash(false);
+
+            // Depositar las monedas ganadas en el Ahorro del Sindicato
+            if (state.coins > 0) {
+                savedShop.bankCoins += state.coins;
+                saveShopData();
+            }
+
+            const finalMeters = Math.floor(state.distance);
+            if (finalMeters > state.highScore) {
+                state.highScore = finalMeters;
+                localStorage.setItem('obrero_highscore', String(finalMeters));
+            }
+
+            hudEl.classList.add('hidden');
+            touchHintEl.classList.add('hidden');
+            sirenBorderEl.classList.add('hidden');
+            policeWarningEl.classList.add('hidden');
+            cementWarningEl.classList.add('hidden');
+
+            document.getElementById('gameover-reason').textContent = reasonText;
+            document.getElementById('final-score').textContent = `${finalMeters} m`;
+            document.getElementById('final-coins').textContent = state.coins;
+            document.getElementById('final-best').textContent = `${state.highScore} m`;
+
+            // Actualizar interfaz de la Tragamonedas del Capataz
+            document.getElementById('slot-tokens-count').textContent = state.gearTokens;
+            const spinBtn = document.getElementById('btn-spin-slot');
+            const slotMsg = document.getElementById('slot-result-msg');
+            if (state.gearTokens > 0) {
+                spinBtn.disabled = false;
+                spinBtn.classList.remove('opacity-40', 'cursor-not-allowed');
+                slotMsg.textContent = '¡Usa 1 Ficha ⚙️ para girar por Segunda Oportunidad, Bomba Impulsora o Monedas x2!';
+            } else {
+                spinBtn.disabled = true;
+                spinBtn.classList.add('opacity-40', 'cursor-not-allowed');
+                slotMsg.textContent = 'Sin fichas ⚙️. ¡Recoge engranajes azules en la calle en tu próxima carrera!';
+            }
+
+            document.getElementById('gameover-screen').classList.remove('hidden');
+        }
+
+        let lastTime = performance.now();
+
+        function updateGame(dt, elapsed) {
+            // Escalado progresivo de velocidad + Fiebre de Cafeína + Penalización por Cemento Fresco
+            state.baseSpeed = Math.min(38, 22 + state.distance * 0.012);
+            const p = state.activePowerup;
+            if (state.coffeeBoostTimer > 0) {
+                state.coffeeBoostTimer -= dt;
+                if (state.coffeeBoostTimer <= 0) updatePowerupVisuals();
+            }
+            if (state.wetCementTimer > 0) {
+                state.wetCementTimer -= dt;
+                cementWarningEl.classList.remove('hidden');
+                if (state.wetCementTimer <= 0) cementWarningEl.classList.add('hidden');
+            }
+            if (state.hardHatCooldown > 0) {
+                state.hardHatCooldown = Math.max(0, state.hardHatCooldown - dt);
+            }
+            if (!state.hardHatShield && state.hardHatCooldown <= 0) {
+                btnHardhatEl.classList.remove('hidden');
+            } else {
+                btnHardhatEl.classList.add('hidden');
+            }
+            if (state.nearMissTimer > 0) {
+                state.nearMissTimer -= dt;
+                if (state.nearMissTimer <= 0) {
+                    state.nearMissCombo = 0;
+                    nearMissBadgeEl.classList.add('hidden');
+                }
+            }
+
+            const speedBoost = (p && p.id === 'jetpack') ? 1.32 : (state.coffeeBoostTimer > 0 ? 1.45 : 1.0);
+            const stumblePenalty = state.policeChasingTimer > 4.2 ? 0.78 : 1.0;
+            const cementSlow = state.wetCementTimer > 0 ? 0.76 : 1.0;
+            state.speed = state.baseSpeed * speedBoost * stumblePenalty * cementSlow;
+
+            // Efecto de velocidad en la lente de la cámara (FOV Warp)
+            const targetFov = state.coffeeBoostTimer > 0 ? 74 : ((p && p.id === 'jetpack') ? 69 : 62);
+            if (Math.abs(camera.fov - targetFov) > 0.2) {
+                camera.fov += (targetFov - camera.fov) * Math.min(1, dt * 6);
+                camera.updateProjectionMatrix();
+            }
+
+            const moveDelta = state.speed * dt;
+            // El Multiplicador de Rango por misiones multiplica los metros recorridos
+            state.distance += moveDelta * 0.45 * (1 + (state.rankMultiplier - 1) * 0.25);
+            if (state.invulnerableTimer > 0) state.invulnerableTimer -= dt;
+
+            // Ciclo Dinámico Día (0-350m) -> Atardecer (350-700m) -> Turno Nocturno (700-1050m)
+            const cycleDist = state.distance % 1050;
+            const targetPhase = cycleDist < 350 ? 'day' : (cycleDist < 700 ? 'sunset' : 'night');
+            if (targetPhase !== state.timePhase) {
+                state.timePhase = targetPhase;
+                const pal = TIME_PALETTES[targetPhase];
+                matLampBulb.color.setHex(pal.lampColor);
+                matBuildingWindow.color.setHex(pal.winColor);
+                hudTimeIconEl.textContent = pal.icon;
+                hudTimeTextEl.textContent = pal.label;
+                if (targetPhase === 'sunset') {
+                    showToast('🌅 ¡CAE LA TARDE EN LA AVENIDA!', 'bg-orange-500');
+                } else if (targetPhase === 'night') {
+                    showToast('🌙 ¡TURNO NOCTURNO! FAROLAS ENCENDIDAS', 'bg-indigo-700');
+                } else {
+                    showToast('☀️ ¡NUEVO AMANECER EN LA OBRA!', 'bg-sky-500');
+                }
+            }
+            const activePal = TIME_PALETTES[state.timePhase];
+            const lerpRate = Math.min(1, dt * 1.8);
+            scene.background.lerp(activePal.sky, lerpRate);
+            scene.fog.color.lerp(activePal.sky, lerpRate);
+            hemiLight.color.lerp(activePal.hemiSky, lerpRate);
+            hemiLight.groundColor.lerp(activePal.hemiGround, lerpRate);
+            dirLight.color.lerp(activePal.dirLight, lerpRate);
+            dirLight.intensity += (activePal.dirIntensity - dirLight.intensity) * lerpRate;
+
+            // Temporizador de Potenciador (Duración mejorable en la Tienda)
+            if (state.activePowerup) {
+                state.powerupTimeLeft -= dt;
+                const maxDur = getPowerupMaxDuration();
+                const pct = Math.max(0, (state.powerupTimeLeft / maxDur) * 100);
+                powerupBarEl.style.width = `${pct}%`;
+                powerupTimerTextEl.textContent = `${Math.max(0, state.powerupTimeLeft).toFixed(1)}s`;
+
+                if (state.powerupTimeLeft <= 0) {
+                    state.activePowerup = null;
+                    updatePowerupVisuals();
+                    showToast('⏱️ FIN DEL POTENCIADOR', 'bg-slate-700');
+                }
+            }
+
+            // Desplazar segmentos de calle
+            roadSegments.forEach(seg => {
+                seg.position.z += moveDelta;
+                if (seg.position.z > 25) {
+                    seg.position.z -= NUM_SEGMENTS * SEGMENT_LENGTH;
+                }
+            });
+
+            // Generar nuevas oleadas hacia el horizonte (con límite de seguridad para evitar bucles infinitos)
+            nextSpawnZ += moveDelta;
+            let safetyCount = 0;
+            while (nextSpawnZ > -145 && safetyCount < 4) {
+                spawnWavePattern(nextSpawnZ);
+                nextSpawnZ -= 27;
+                safetyCount++;
+            }
+
+            // Movimiento lateral suave entre los 3 carriles
+            const targetX = LANES[state.lane];
+            state.x += (targetX - state.x) * Math.min(1, dt * 14);
+
+            // Control de Rodar (Agacharse)
+            if (state.isRolling) {
+                state.rollTimer -= dt;
+                if (state.rollTimer <= 0) state.isRolling = false;
+            }
+
+            // Determinar si el jugador está sobre una rampa o el techo de un autobús/camión
+            let supportedY = 0;
+            obstacles.forEach(obs => {
+                if (obs.type === 'vehicle' && obs.isHeavy) {
+                    const sameLane = Math.abs(state.x - LANES[obs.lane]) < 1.15;
+                    if (!sameLane) return;
+
+                    const halfLen = obs.length / 2;
+                    const zFront = obs.mesh.position.z + halfLen;
+                    const zBack = obs.mesh.position.z - halfLen;
+
+                    // Rampa delante del vehículo (+Z)
+                    if (obs.hasRamp && state.y >= 0) {
+                        const rampStart = zFront + obs.rampLength;
+                        if (0 <= rampStart && 0 >= zFront) {
+                            const progress = (rampStart - 0) / obs.rampLength;
+                            supportedY = Math.max(supportedY, progress * obs.height);
+                        }
+                    }
+                    // Techo del autobús o camión
+                    if (0 <= zFront + 0.4 && 0 >= zBack - 0.4) {
+                        if (state.y >= obs.height - 0.55) {
+                            supportedY = Math.max(supportedY, obs.height);
+                        }
+                    }
+                }
+            });
+            state.groundY = supportedY;
+
+            // Física vertical (Salto normal, Martillo Neumático Saltarín o Jetpack Soldador)
+            if (p && p.id === 'jetpack') {
+                // Vuela alto sobre el tráfico y lanza chispas de soldadura hacia abajo
+                state.y += (6.6 - state.y) * Math.min(1, dt * 7);
+                state.vy = 0;
+                if (Math.random() < 0.65) {
+                    spawnExplosion(
+                        new THREE.Vector3(state.x, state.y + 0.8, 0.4),
+                        Math.random() < 0.5 ? 0xfacc15 : 0x38bdf8,
+                        1
+                    );
+                }
+            } else {
+                state.y += state.vy * dt;
+                if (state.y > state.groundY) {
+                    state.vy += GRAVITY * dt;
+                }
+                if (state.y <= state.groundY) {
+                    state.y = state.groundY;
+                    state.vy = 0;
+                    // Si tiene el Martillo Neumático Saltarín, rebota automáticamente al tocar el suelo o techo
+                    if (p && p.id === 'pogo') {
+                        state.vy = POGO_VELOCITY;
+                        sfx.playJump(true);
+                    }
+                }
+            }
+
+            // Posicionar y animar al Obrero (Humanoide Articulado)
+            worker.root.position.set(state.x, state.y, 0);
+            const sittingOffset = (p && p.id === 'bulldozer') ? 0.45 : 0;
+            const runCycle = elapsed * state.speed * 0.82;
+
+            if (state.isRolling) {
+                // Voltereta real de 360 grados hacia adelante al rodar (sin deformar el modelo en bloque)
+                const rollProgress = (0.68 - state.rollTimer) / 0.68;
+                worker.bodyGroup.position.y = 0.72;
+                worker.bodyGroup.rotation.x = -rollProgress * Math.PI * 2;
+                worker.bodyGroup.rotation.z = 0;
+                worker.leftLeg.rotation.x = 1.2;
+                worker.rightLeg.rotation.x = 1.2;
+                worker.leftArm.rotation.x = -1.2;
+                worker.rightArm.rotation.x = -1.2;
+            } else {
+                worker.bodyGroup.position.y = 1.15 + sittingOffset;
+                worker.bodyGroup.rotation.x = 0.14;
+                worker.bodyGroup.rotation.z = (state.x - LANES[state.lane]) * 0.12;
+
+                if (state.y <= state.groundY + 0.1) {
+                    worker.bodyGroup.position.y += Math.abs(Math.sin(runCycle)) * 0.14;
+                    worker.leftLeg.rotation.x = Math.sin(runCycle) * 0.95;
+                    worker.rightLeg.rotation.x = -Math.sin(runCycle) * 0.95;
+                    worker.leftArm.rotation.x = -Math.sin(runCycle) * 0.85;
+                    worker.rightArm.rotation.x = Math.sin(runCycle) * 0.85;
+                } else {
+                    worker.leftLeg.rotation.x = 0.55;
+                    worker.rightLeg.rotation.x = -0.45;
+                    worker.leftArm.rotation.x = -2.2;
+                    worker.rightArm.rotation.x = -2.2;
+                }
+            }
+
+            if (worker.shieldMesh.visible) {
+                worker.shieldMesh.rotation.z += dt * 3.0;
+            }
+
+            // Actualizar al Policía Perseguidor
+            if (state.policeChasingTimer > 0) {
+                state.policeChasingTimer -= dt;
+                policeWarningEl.classList.remove('hidden');
+                policeWarningEl.classList.add('flex');
+                sirenBorderEl.classList.remove('hidden');
+            } else {
+                policeWarningEl.classList.add('hidden');
+                policeWarningEl.classList.remove('flex');
+                sirenBorderEl.classList.add('hidden');
+            }
+
+            const targetPoliceZ = state.policeChasingTimer > 0 ? 2.45 : 6.8;
+            state.policeZOffset += (targetPoliceZ - state.policeZOffset) * Math.min(1, dt * 4.5);
+            police.root.position.x += (state.x - police.root.position.x) * Math.min(1, dt * 8);
+            police.root.position.y = 0;
+            police.root.position.z = state.policeZOffset;
+
+            police.leftLeg.rotation.x = Math.sin(runCycle + 0.5) * 0.85;
+            police.rightLeg.rotation.x = -Math.sin(runCycle + 0.5) * 0.85;
+            police.leftArm.rotation.x = -Math.sin(runCycle + 0.5) * 0.7;
+            police.rightArm.rotation.x = Math.sin(runCycle + 0.5) * 0.7;
+
+            // Parpadeo de sirena del policía
+            const sirenToggle = Math.floor(elapsed * 10) % 2 === 0;
+            police.sirenRed.material.color.setHex(sirenToggle ? 0xef4444 : 0x450a0a);
+            police.sirenBlue.material.color.setHex(!sirenToggle ? 0x3b82f6 : 0x172554);
+
+            // Actualizar Obstáculos y Vehículos en movimiento
+            for (let i = obstacles.length - 1; i >= 0; i--) {
+                const obs = obstacles[i];
+                const extraSpeed = obs.isMoving ? 13.5 : 0;
+                obs.mesh.position.z += (state.speed + extraSpeed) * dt;
+
+                // Si el vehículo viene de frente: parpadea las luces delanteras y toca el claxon
+                if (obs.isMoving && obs.headlights) {
+                    const flashOn = Math.floor(elapsed * 12) % 2 === 0;
+                    obs.headlights.forEach(hl => {
+                        hl.material = flashOn ? headlightOnMat : headlightOffMat;
+                        hl.scale.setScalar(flashOn ? 1.35 : 0.9);
+                    });
+
+                    if (!obs.honked && obs.mesh.position.z > -44 && obs.mesh.position.z < -10) {
+                        obs.honked = true;
+                        sfx.playHorn(obs.isHeavy);
+                    }
+                }
+
+                // Detección de Colisiones con el Obrero (en Z = 0)
+                const dz = Math.abs(obs.mesh.position.z);
+                const dx = Math.abs(state.x - LANES[obs.lane]);
+                const hasAnyShield = !!(p || state.hardHatShield || state.coffeeBoostTimer > 0);
+
+                if (obs.type === 'wet_cement') {
+                    // Charco de Cemento Fresco: llena las botas de mezcla pesada si no lo saltas
+                    if (!obs.triggered && dz < 1.15 && dx < 1.05 && state.y < 0.35) {
+                        obs.triggered = true;
+                        if (!hasAnyShield) {
+                            sfx.playCementSplat();
+                            state.wetCementTimer = 3.6;
+                            spawnExplosion(obs.mesh.position, 0x78716c, 10);
+                            showToast('🪨 ¡CEMENTO FRESCO! BOTAS PESADAS', 'bg-stone-600');
+                        }
+                    }
+                } else if (obs.type === 'water_geyser') {
+                    // Animación del chorro de agua a presión
+                    obs.waterColumn.scale.y = 0.9 + Math.sin(elapsed * 14) * 0.14;
+                    obs.foamTop.position.y = 3.5 + Math.sin(elapsed * 14) * 0.35;
+
+                    if (!obs.bounced && dz < 1.15 && dx < 1.1) {
+                        // Si el jugador entra saltando o cae sobre el chorro, el géiser lo lanza por los aires como trampolín
+                        if (state.y >= 0.45 || state.vy > 0 || hasAnyShield) {
+                            obs.bounced = true;
+                            sfx.playGeyserBounce();
+                            state.vy = JUMP_VELOCITY * 1.48;
+                            state.wetCementTimer = 0; // El agua limpia el cemento de las botas
+                            state.coins += 8;
+                            advanceMission('geyser', 1);
+                            spawnExplosion(obs.mesh.position.clone().add(new THREE.Vector3(0, 2.5, 0)), 0x38bdf8, 16);
+                            showToast('⛲ ¡IMPULSO DE GÉISER! +8$', 'bg-sky-500');
+                        } else if (state.invulnerableTimer <= 0) {
+                            // Si choca a ras de suelo sin saltar contra el géiser abierto, tropieza
+                            obs.bounced = true;
+                            sfx.playStumbleAndSiren();
+                            state.policeChasingTimer = 5.5;
+                            state.cameraShake = 0.35;
+                            showToast('⚠️ ¡ALCANTARILLA ABIERTA! SALTA LA PRÓXIMA VEZ', 'bg-red-600');
+                        }
+                    }
+                } else if (obs.type === 'swinging_beam') {
+                    // La viga de acero oscila de izquierda a derecha en el aire
+                    const beamX = Math.sin(elapsed * 2.7 + obs.phase) * 3.1;
+                    obs.mesh.position.x = beamX;
+                    obs.mesh.rotation.z = Math.sin(elapsed * 2.7 + obs.phase) * 0.12;
+
+                    if (dz < 0.75 && Math.abs(state.x - beamX) < 1.65 && state.y > 2.6 && state.y < 5.6) {
+                        if (state.invulnerableTimer <= 0) {
+                            if (hasAnyShield) {
+                                breakPowerupShield(obs.mesh);
+                                scene.remove(obs.mesh);
+                                obstacles.splice(i, 1);
+                                continue;
+                            } else {
+                                triggerGameOver('¡Te golpeó una viga de grúa oscilante en el aire!');
+                                return;
+                            }
+                        }
+                    }
+                } else if (obs.type === 'porta_potty') {
+                    // Interacción con Baño Portátil Azul: pisarlo por arriba o atravesarlo con escudo lo destruye y suelta +15 monedas
+                    if (!obs.smashed && dz < 1.1 && dx < 1.1) {
+                        if (state.y >= 1.6 || hasAnyShield) {
+                            obs.smashed = true;
+                            sfx.playCrash(true);
+                            sfx.playCoin();
+                            spawnExplosion(obs.mesh.position.clone().add(new THREE.Vector3(0, 1.4, 0)), 0x0284c7, 22);
+                            state.coins += 15;
+                            advanceMission('potty', 1);
+                            if (state.y >= 1.6) state.vy = JUMP_VELOCITY * 0.85;
+                            scene.remove(obs.mesh);
+                            obstacles.splice(i, 1);
+                            showToast('🚽 ¡BAÑO PORTÁTIL DEMOLIDO! +15$', 'bg-sky-500');
+                            continue;
+                        } else if (state.invulnerableTimer <= 0) {
+                            triggerGameOver('¡Te estrellaste de frente contra un baño portátil de la obra!');
+                            return;
+                        }
+                    }
+                } else if (obs.type === 'pothole') {
+                    // Colisión con Bache en Construcción
+                    if (!obs.triggered && dz < 1.15 && dx < 1.0 && state.y < 0.35) {
+                        obs.triggered = true;
+
+                        // Si lleva la Mini-Excavadora Blindada o Fiebre de Cafeína, aplasta el bache sin tropezar
+                        if ((p && p.id === 'bulldozer') || state.coffeeBoostTimer > 0) {
+                            state.coins += 3;
+                            sfx.playCoin();
+                            showToast('🚜 ¡BACHE SUPERADO! +3 MONEDAS', 'bg-orange-500');
+                        } else if (state.invulnerableTimer <= 0) {
+                            sfx.playStumbleAndSiren();
+                            state.cameraShake = 0.4;
+
+                            if (state.policeChasingTimer > 0) {
+                                // Segundo tropiezo con el policía pegado atrás = Arrestado
+                                triggerGameOver('¡Tropezaste dos veces en los baches y el policía te atrapó!');
+                                return;
+                            } else {
+                                state.policeChasingTimer = 6.0;
+                                showToast('⚠️ ¡TROPIEZO EN BACHE! POLICÍA CERCA', 'bg-red-600');
+                            }
+                        }
+                    }
+                } else if (obs.type === 'barrier_high') {
+                    // Colisión con Barrera Alta de Construcción
+                    if (dz < 0.65 && dx < 1.05) {
+                        const playerTopY = state.y + (state.isRolling ? 1.1 : 2.5);
+                        const hitsBarrier = playerTopY > obs.bottomClearance && state.y < obs.height;
+
+                        if (hitsBarrier && state.invulnerableTimer <= 0) {
+                            if ((p && (p.id === 'bulldozer' || p.id === 'magnet_mech')) || state.coffeeBoostTimer > 0) {
+                                // La Excavadora, el Mecha y el Turbo de Café destruyen barreras de madera
+                                spawnExplosion(obs.mesh.position, 0xf97316, 15);
+                                scene.remove(obs.mesh);
+                                obstacles.splice(i, 1);
+                                state.coins += 5;
+                                sfx.playCoin();
+                                showToast('💥 ¡BARRERA DESTRUIDA! +5$', 'bg-amber-500');
+                                continue;
+                            } else if (hasAnyShield) {
+                                breakPowerupShield(obs.mesh);
+                                scene.remove(obs.mesh);
+                                obstacles.splice(i, 1);
+                                continue;
+                            } else {
+                                triggerGameOver('¡Chocaste contra una barrera alta! Desliza hacia abajo para hacer una voltereta.');
+                                return;
+                            }
+                        }
+                    }
+                } else if (obs.type === 'vehicle') {
+                    // Colisión con Carros, Camionetas, Autobuses y Camiones
+                    const halfLen = obs.length / 2;
+                    if (dz < halfLen + 0.45 && dx < 1.08) {
+                        // Si está subiendo por la rampa o corriendo sobre el techo, es seguro
+                        const onRampOrRoof = state.y >= obs.height - 0.55 || (obs.hasRamp && obs.mesh.position.z < -halfLen + 0.6);
+
+                        if (!onRampOrRoof && state.y < obs.height - 0.25 && state.invulnerableTimer <= 0) {
+                            // La Mini-Excavadora Blindada o Fiebre de Cafeína aplastan carros pequeños sin perder el escudo
+                            if (((p && p.id === 'bulldozer') || state.coffeeBoostTimer > 0) && !obs.isHeavy) {
+                                sfx.playCrash(true);
+                                spawnExplosion(obs.mesh.position, 0xef4444, 20);
+                                scene.remove(obs.mesh);
+                                obstacles.splice(i, 1);
+                                state.coins += 8;
+                                state.cameraShake = 0.25;
+                                showToast('🚜 ¡VEHÍCULO DEMOLIDO! +8$', 'bg-orange-600');
+                                continue;
+                            } else if (hasAnyShield) {
+                                // Cualquier potenciador o Casco Dorado nos salva de 1 choque mortal
+                                breakPowerupShield(obs.mesh);
+                                scene.remove(obs.mesh);
+                                obstacles.splice(i, 1);
+                                continue;
+                            } else {
+                                const msg = obs.isMoving
+                                    ? '¡Un vehículo en movimiento te arrolló de frente!'
+                                    : '¡Te estrellaste contra un vehículo estacionado y el policía te arrestó!';
+                                triggerGameOver(msg);
+                                return;
+                            }
+                        }
+                    }
+                }
+
+                // Limpiar obstáculos que quedaron atrás
+                if (obs.mesh.position.z > 18) {
+                    scene.remove(obs.mesh);
+                    obstacles.splice(i, 1);
+                }
+            }
+
+            // Actualizar Termos de Café (Fiebre de Cafeína Turbo)
+            for (let i = coffeePickups.length - 1; i >= 0; i--) {
+                const cf = coffeePickups[i];
+                cf.mesh.position.z += moveDelta;
+                cf.mesh.rotation.y += dt * 3.2;
+
+                const distX = Math.abs(cf.mesh.position.x - state.x);
+                const distY = Math.abs(cf.mesh.position.y - (state.y + 1.2));
+                const distZ = Math.abs(cf.mesh.position.z);
+
+                if (distZ < 1.25 && distX < 1.25 && distY < 1.7) {
+                    sfx.playCoffeeTurbo();
+                    spawnExplosion(cf.mesh.position, 0xdc2626, 14);
+                    scene.remove(cf.mesh);
+                    coffeePickups.splice(i, 1);
+                    state.coffeeBoostTimer = 3.8;
+                    state.policeChasingTimer = 0; // El café te da tanta velocidad que dejas atrás al policía
+                    updatePowerupVisuals();
+                    showToast('☕ ¡FIEBRE DE CAFEÍNA! TURBO 3.8s', 'bg-red-600');
+                    continue;
+                }
+
+                if (cf.mesh.position.z > 12) {
+                    scene.remove(cf.mesh);
+                    coffeePickups.splice(i, 1);
+                }
+            }
+
+            // Actualizar Monedas Amarillas (+ Atracción magnética del Mecha Grúa o Jetpack)
+            const hasMagnet = p && (p.id === 'magnet_mech' || p.id === 'jetpack');
+            for (let i = coins.length - 1; i >= 0; i--) {
+                const c = coins[i];
+                c.mesh.position.z += moveDelta;
+                c.mesh.rotation.y += dt * 3.5;
+
+                // Atracción electromagnética desde los 3 carriles
+                if (hasMagnet && c.mesh.position.z > -18 && c.mesh.position.z < 3) {
+                    c.mesh.position.x += (state.x - c.mesh.position.x) * Math.min(1, dt * 11);
+                    c.mesh.position.y += ((state.y + 1.3) - c.mesh.position.y) * Math.min(1, dt * 11);
+                }
+
+                const distX = Math.abs(c.mesh.position.x - state.x);
+                const distY = Math.abs(c.mesh.position.y - (state.y + 1.2));
+                const distZ = Math.abs(c.mesh.position.z);
+
+                if (distZ < 1.15 && distX < 1.25 && distY < 1.65) {
+                    state.coins += 1;
+                    advanceMission('coins', 1);
+                    sfx.playCoin();
+                    scene.remove(c.mesh);
+                    coins.splice(i, 1);
+                    continue;
+                }
+
+                if (c.mesh.position.z > 12) {
+                    scene.remove(c.mesh);
+                    coins.splice(i, 1);
+                }
+            }
+
+            // Actualizar Letras O-B-R-A y Fichas de Engranaje ⚙️
+            for (let i = specialPickups.length - 1; i >= 0; i--) {
+                const sp = specialPickups[i];
+                sp.mesh.position.z += moveDelta;
+                sp.mesh.rotation.y += dt * 3.0;
+
+                const distX = Math.abs(sp.mesh.position.x - state.x);
+                const distY = Math.abs(sp.mesh.position.y - (state.y + 1.25));
+                const distZ = Math.abs(sp.mesh.position.z);
+
+                if (distZ < 1.3 && distX < 1.3 && distY < 1.8) {
+                    if (sp.kind === 'token') {
+                        state.gearTokens += 1;
+                        sfx.playPowerupBox();
+                        spawnExplosion(sp.mesh.position, 0x22d3ee, 14);
+                        showToast('⚙️ ¡FICHA DE TRAGAMONEDAS OBTENIDA!', 'bg-cyan-600');
+                    } else if (sp.kind === 'letter') {
+                        state.collectedLetters[sp.letterChar] = true;
+                        sfx.playPowerupBox();
+                        spawnExplosion(sp.mesh.position, 0xfacc15, 16);
+
+                        const allDone = ['O', 'B', 'R', 'A'].every(l => state.collectedLetters[l]);
+                        if (allDone) {
+                            state.coins += 100;
+                            state.coffeeBoostTimer = 4.5;
+                            state.collectedLetters = { O: false, B: false, R: false, A: false };
+                            updatePowerupVisuals();
+                            showToast('🏆 ¡PALABRA "OBRA" COMPLETA! +100$ Y TURBO', 'rainbow-badge');
+                        } else {
+                            showToast(`🔤 ¡LETRA "${sp.letterChar}" RECOGIDA!`, 'bg-amber-500');
+                        }
+                    }
+                    updateMissionsAndLettersUI();
+                    scene.remove(sp.mesh);
+                    specialPickups.splice(i, 1);
+                    continue;
+                }
+
+                if (sp.mesh.position.z > 12) {
+                    scene.remove(sp.mesh);
+                    specialPickups.splice(i, 1);
+                }
+            }
+
+            // Actualizar Cajas Multicolor con signo '?'
+            for (let i = mysteryBoxes.length - 1; i >= 0; i--) {
+                const b = mysteryBoxes[i];
+                b.mesh.position.z += moveDelta;
+                b.mesh.rotation.y += dt * 2.5;
+                b.mesh.rotation.x += dt * 1.4;
+
+                const distX = Math.abs(b.mesh.position.x - state.x);
+                const distY = Math.abs(b.mesh.position.y - (state.y + 1.2));
+                const distZ = Math.abs(b.mesh.position.z);
+
+                if (distZ < 1.3 && distX < 1.3 && distY < 1.8) {
+                    spawnExplosion(b.mesh.position, 0xfacc15, 16);
+                    scene.remove(b.mesh);
+                    mysteryBoxes.splice(i, 1);
+                    activateRandomPowerup();
+                    continue;
+                }
+
+                if (b.mesh.position.z > 12) {
+                    scene.remove(b.mesh);
+                    mysteryBoxes.splice(i, 1);
+                }
+            }
+
+            // Actualizar Partículas
+            for (let i = particles.length - 1; i >= 0; i--) {
+                const pt = particles[i];
+                pt.life -= dt;
+                pt.mesh.position.addScaledVector(pt.vel, dt);
+                pt.mesh.scale.setScalar(Math.max(0.01, pt.life * 1.5));
+                if (pt.life <= 0) {
+                    scene.remove(pt.mesh);
+                    particles.splice(i, 1);
+                }
+            }
+
+            // Seguimiento suave de Cámara 3D + Vibración en tropiezos/choques
+            const targetCamX = state.x * 0.45;
+            const targetCamY = 6.2 + state.y * 0.55;
+            camera.position.x += (targetCamX - camera.position.x) * Math.min(1, dt * 8);
+            camera.position.y += (targetCamY - camera.position.y) * Math.min(1, dt * 6);
+
+            if (state.cameraShake > 0) {
+                state.cameraShake -= dt;
+                camera.position.x += (Math.random() - 0.5) * 0.45;
+                camera.position.y += (Math.random() - 0.5) * 0.45;
+            }
+
+            camera.lookAt(state.x * 0.25, 1.8 + state.y * 0.35, -9);
+
+            // Actualizar marcadores del HUD
+            scoreEl.textContent = Math.floor(state.distance);
+            coinsEl.textContent = state.coins;
+        }
+
+        /* ============================================================================
+         * 9. CICLO DE RENDERIZADO Y EVENTOS DE INTERFAZ
+         * ============================================================================ */
+        function animate(now) {
+            requestAnimationFrame(animate);
+            if (!now) now = performance.now();
+            const dt = Math.min(0.05, Math.max(0.001, (now - lastTime) / 1000));
+            lastTime = now;
+            const elapsed = now / 1000;
+
+            try {
+                if (state.playing) {
+                    updateGame(dt, elapsed);
+                } else {
+                    // Animación suave de demostración en el menú
+                    worker.root.position.set(0, 0, 0);
+                    police.root.position.set(0, 0, 4.2);
+                    worker.leftLeg.rotation.x = Math.sin(elapsed * 6) * 0.5;
+                    worker.rightLeg.rotation.x = -Math.sin(elapsed * 6) * 0.5;
+                }
+
+                renderer.render(scene, camera);
+            } catch (err) {
+                console.error('Error recuperado en ciclo de juego:', err);
+            }
+        }
+
+        function startGame() {
+            sfx.init();
+            document.getElementById('start-screen').classList.add('hidden');
+            document.getElementById('gameover-screen').classList.add('hidden');
+            hudEl.classList.remove('hidden');
+            touchHintEl.classList.remove('hidden');
+
+            resetWorld();
+            state.playing = true;
+            lastTime = performance.now();
+        }
+
+        document.getElementById('btn-start').addEventListener('click', startGame);
+        document.getElementById('btn-restart').addEventListener('click', startGame);
+        btnHardhatEl.addEventListener('click', activateGoldenHardHat);
+
+        // Lógica de la Tragamonedas del Capataz al terminar la partida
+        const reelIcons = ['❤️', '💣', '💰', '⛑️'];
+        let slotSpinning = false;
+
+        document.getElementById('btn-spin-slot').addEventListener('click', () => {
+            if (slotSpinning || state.gearTokens <= 0) return;
+            sfx.init();
+            state.gearTokens -= 1;
+            updateMissionsAndLettersUI();
+            document.getElementById('slot-tokens-count').textContent = state.gearTokens;
+
+            slotSpinning = true;
+            const spinBtn = document.getElementById('btn-spin-slot');
+            const slotMsg = document.getElementById('slot-result-msg');
+            const r1 = document.getElementById('reel-1');
+            const r2 = document.getElementById('reel-2');
+            const r3 = document.getElementById('reel-3');
+            spinBtn.disabled = true;
+            spinBtn.classList.add('opacity-40');
+
+            let ticks = 0;
+            const interval = setInterval(() => {
+                ticks++;
+                sfx.playSlotTick(false);
+                r1.textContent = reelIcons[Math.floor(Math.random() * reelIcons.length)];
+                r2.textContent = reelIcons[Math.floor(Math.random() * reelIcons.length)];
+                r3.textContent = reelIcons[Math.floor(Math.random() * reelIcons.length)];
+
+                if (ticks >= 14) {
+                    clearInterval(interval);
+                    slotSpinning = false;
+
+                    // Tabla de probabilidades reales de la Tragamonedas del Capataz:
+                    // - 5%  (0.00 a 0.05): ❤️ Segunda Vida (Revivir con Casco Dorado)
+                    // - 15% (0.05 a 0.20): 💰 Bono de Dinero del Sindicato
+                    // - 35% (0.20 a 0.55): 💣 Bomba Impulsora (+250 m) o ☕ Pack de Inicio (Casco + Café)
+                    // - 45% (0.55 a 1.00): ❌ Sin premio (Símbolos desiguales, como en Jetpack Joyride)
+                    const prizeRoll = Math.random();
+
+                    if (prizeRoll < 0.05) {
+                        // 5% Probabilidad: Segunda Vida (Revivir en el mismo lugar con Casco Dorado)
+                        sfx.playSlotTick(true);
+                        r1.textContent = '❤️'; r2.textContent = '❤️'; r3.textContent = '❤️';
+                        slotMsg.textContent = '❤️ ¡PREMIO MAYOR (5%)! ¡Segunda Vida activada con Casco Dorado!';
+                        setTimeout(() => {
+                            document.getElementById('gameover-screen').classList.add('hidden');
+                            hudEl.classList.remove('hidden');
+                            touchHintEl.classList.remove('hidden');
+                            obstacles.forEach(o => scene.remove(o.mesh));
+                            obstacles.length = 0;
+                            state.y = 0;
+                            state.vy = 0;
+                            state.policeChasingTimer = 0;
+                            state.invulnerableTimer = 2.5;
+                            state.hardHatShield = true;
+                            updatePowerupVisuals();
+                            state.playing = true;
+                            lastTime = performance.now();
+                            showToast('❤️ ¡REVIVISTE EN LA OBRA!', 'bg-emerald-600');
+                        }, 900);
+                    } else if (prizeRoll < 0.20) {
+                        // 15% Probabilidad: Bono de Dinero
+                        sfx.playSlotTick(true);
+                        r1.textContent = '💰'; r2.textContent = '💰'; r3.textContent = '💰';
+                        const bonus = Math.max(40, state.coins);
+                        state.coins += bonus;
+                        savedShop.bankCoins += bonus;
+                        saveShopData();
+                        document.getElementById('final-coins').textContent = state.coins;
+                        slotMsg.textContent = `💰 ¡BONO DEL SINDICATO (15%)! +${bonus} Monedas extra guardadas.`;
+                    } else if (prizeRoll < 0.55) {
+                        // 35% Probabilidad: Otros premios menores (Bomba Impulsora de metros)
+                        sfx.playSlotTick(true);
+                        r1.textContent = '💣'; r2.textContent = '💣'; r3.textContent = '💣';
+                        state.distance += 250;
+                        const newFinal = Math.floor(state.distance);
+                        if (newFinal > state.highScore) {
+                            state.highScore = newFinal;
+                            localStorage.setItem('obrero_highscore', String(newFinal));
+                        }
+                        document.getElementById('final-score').textContent = `${newFinal} m`;
+                        document.getElementById('final-best').textContent = `${state.highScore} m`;
+                        slotMsg.textContent = '💣 ¡BOMBA IMPULSORA! Volaste +250 metros adicionales.';
+                    } else {
+                        // 45% Probabilidad: No toca premio (los 3 rodillos quedan distintos)
+                        sfx.playRoll();
+                        const shuffled = [...reelIcons].sort(() => Math.random() - 0.5);
+                        r1.textContent = shuffled[0];
+                        r2.textContent = shuffled[1];
+                        r3.textContent = shuffled[2];
+                        slotMsg.textContent = '💨 ¡Casi! No hubo combinación ganadora esta vez.';
+                    }
+
+                    if (state.gearTokens > 0 && !state.playing) {
+                        spinBtn.disabled = false;
+                        spinBtn.classList.remove('opacity-40');
+                    }
+                }
+            }, 75);
+        });
+
+        // Eventos de la Tienda del Sindicato
+        const shopModalEl = document.getElementById('shop-modal');
+        document.getElementById('btn-open-shop-start').addEventListener('click', () => {
+            sfx.init();
+            document.getElementById('shop-feedback').textContent = '';
+            renderShopModal();
+            shopModalEl.classList.remove('hidden');
+        });
+        document.getElementById('btn-open-shop-over').addEventListener('click', () => {
+            sfx.init();
+            document.getElementById('shop-feedback').textContent = '';
+            renderShopModal();
+            shopModalEl.classList.remove('hidden');
+        });
+        document.getElementById('btn-close-shop').addEventListener('click', () => {
+            shopModalEl.classList.add('hidden');
+        });
+
+        document.getElementById('btn-buy-powerup').addEventListener('click', () => {
+            sfx.init();
+            const cost = (savedShop.powerupLevel + 1) * 150;
+            const fb = document.getElementById('shop-feedback');
+            if (savedShop.powerupLevel < 3 && savedShop.bankCoins >= cost) {
+                savedShop.bankCoins -= cost;
+                savedShop.powerupLevel += 1;
+                sfx.playPowerupBox();
+                saveShopData();
+                renderShopModal();
+                fb.textContent = `⚡ ¡Cajas [?] mejoradas a ${getPowerupMaxDuration()} segundos!`;
+            } else {
+                sfx.playRoll();
+                fb.textContent = '⚠️ No tienes suficientes monedas ahorradas.';
+            }
+        });
+
+        document.getElementById('btn-buy-hardhat').addEventListener('click', () => {
+            sfx.init();
+            const cost = (savedShop.hardhatLevel + 1) * 150;
+            const fb = document.getElementById('shop-feedback');
+            if (savedShop.hardhatLevel < 3 && savedShop.bankCoins >= cost) {
+                savedShop.bankCoins -= cost;
+                savedShop.hardhatLevel += 1;
+                sfx.playPowerupBox();
+                saveShopData();
+                renderShopModal();
+                fb.textContent = `⛑️ ¡Recarga del Casco Dorado reducida a ${getHardhatMaxCooldown()}s!`;
+            } else {
+                sfx.playRoll();
+                fb.textContent = '⚠️ No tienes suficientes monedas ahorradas.';
+            }
+        });
+
+        document.getElementById('btn-mute').addEventListener('click', () => {
+            sfx.init();
+            const isMuted = sfx.toggleMute();
+            document.getElementById('mute-icon').textContent = isMuted ? '🔇' : '🔊';
+        });
+
+        window.addEventListener('resize', () => {
+            camera.aspect = window.innerWidth / window.innerHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(window.innerWidth, window.innerHeight);
+        });
+
+        window.onload = function () {
+            lastTime = performance.now();
+            animate(lastTime);
+        };
+    </script>
+</body>
+</html>
